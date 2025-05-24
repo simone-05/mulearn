@@ -27,18 +27,34 @@ def exp_clip(a):
 
 
 class Fuzzifier:
-    """Base class for fuzzifiers.
+    r"""Base class for fuzzifiers.
 
     The base class for fuzzifiers is Fuzzifier: it exposes a basic constructor
     which is called from the subclasses, and two methods `get_membership`
     (returning the membership function inferred from data) and `get_profile`
     computing information exploitable in order to visualize the fuzzifier
-    in graphical form."""
+    in graphical form.
+    """
 
     def __init__(self, profile):
         self.profile = profile
 
-    def get_membership(self):
+    def fit(self, squared_R, mu, squared_radius):
+        r"""Fit the fuzzifier on training data.
+
+        :param squared_R: iterable of squared distance of the images of vectors
+          in data space w.r.t. the center of the fuzzy set in feature space.
+        :type squared_R: iterable of `float`
+        :param mu: membership degrees of the vectors having originated
+          `squared_R`.
+        :type mu: vector of floats having the same length of `squared_R`
+        :param squared_radius: radius of the fuzzy set in feature space.
+        :type squared_radius: float
+        """
+        raise NotImplementedError(
+            'The base class does not implement the `fit` method')
+
+    def get_membership(self, R_2):
         """Return the induced membership function.
 
         :raises: NotFittedError if `fit` has not been called
@@ -114,7 +130,7 @@ class Fuzzifier:
     
     def __repr__(self):
         """Return the python representation of the fuzzifier."""
-        arg = self.profile if self.profile != self.default_profile else ''
+        arg = self.profile if self.profile != None else ''
         return f'{self.__class__.__name__}({arg})'
 
 
@@ -124,8 +140,7 @@ class CrispFuzzifier(Fuzzifier):
     Fuzzifier corresponding to a crisp (classical) set: membership is always
     equal to either $0$ or $1$."""
 
-    default_profile = "fixed"
-    def __init__(self, profile=default_profile):
+    def __init__(self, profile='fixed'):
         r"""Create an instance of :class:`CrispFuzzifier`.
 
         :param profile: method to be used in order to build the fuzzifier
@@ -209,8 +224,7 @@ class LinearFuzzifier(Fuzzifier):
     Fuzzifier corresponding to a fuzzy set whose membership in feature space
     linearly decreases from 1 to 0."""
 
-    default_profile = "fixed"
-    def __init__(self, profile=default_profile):
+    def __init__(self, profile='fixed'):
         r"""Create an instance of :class:`LinearFuzzifier`.
         :param profile: method to be used in order to build the fuzzifier
           profile: `'fixed'` relies on the radius of the sphere defining
@@ -342,8 +356,7 @@ class ExponentialFuzzifier(Fuzzifier):
     Fuzzifier corresponding to a fuzzy set whose membership in feature space
     exponentially decreases from 1 to 0."""
 
-    default_profile = "fixed"
-    def __init__(self, profile=default_profile):
+    def __init__(self, profile='fixed'):
         r"""Create an instance of :class:`ExponentialFuzzifier`.
 
         :param profile: method to be used in order to build the fuzzifier
@@ -488,8 +501,7 @@ class QuantileConstantPiecewiseFuzzifier(Fuzzifier):
     function, whose steps are defined according to the quartiles of the squared
     distances between images of points and center of the learnt sphere."""
 
-    default_profile = 'infer'
-    def __init__(self, profile=default_profile):
+    def __init__(self, profile='infer'):
         r"""Create an instance of :class:`QuantileConstantPiecewiseFuzzifier`.
         
         :param profile: method to be used in order to build the fuzzifier
@@ -559,8 +571,7 @@ class QuantileLinearPiecewiseFuzzifier(Fuzzifier):
     function, whose steps are defined according to the quartiles of the squared
     distances between images of points and center of the learnt sphere."""
 
-    default_profile = 'infer'
-    def __init__(self, profile=default_profile):
+    def __init__(self, profile='infer'):
         r"""Create an instance of :class:`QuantileLinearPiecewiseFuzzifier`.
         
         :param profile: method to be used in order to build the fuzzifier
