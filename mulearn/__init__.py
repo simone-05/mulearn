@@ -14,7 +14,7 @@ from sklearn.exceptions import NotFittedError, FitFailedWarning
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 
 import mulearn.fuzzifier as fuzzifier
-import mulearn.anomaly_detectors as anomaly_detectors
+import mulearn.anomaly_detector as anomaly_detector
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
 
     def __init__(self,
                  fuzzifier: fuzzifier.Fuzzifier = fuzzifier.ExponentialFuzzifier(),
-                 anomaly_detector: anomaly_detectors.AnomalyDetector = anomaly_detectors.SVMAnomalyDetector(),
+                 anomaly_detector: anomaly_detector.AnomalyDetector = anomaly_detector.SVMAnomalyDetector(),
                  keep_original_data: bool = False) -> None :
         r"""Create an instance of :class:`FuzzyInductor`.
 
@@ -51,7 +51,7 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
         raise NotImplementedError(
             'The base class does not implement the `__eq__` method')
 
-    def fit(self, X: ArrayLike, y: Sequence[int|float] | NDArray | None = None, **kwargs) -> Self:
+    def fit(self, X: ArrayLike , y: ArrayLike | None = None, **kwargs) -> Self:
         r""" Train the anomaly detector to be able to get the anomaly score for each data point.
         
         :param X: Vectors in data space.
@@ -62,27 +62,18 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
         :returns: self -- the trained model.
         """
 
-        X = check_array(X)
-
         if self.keep_original_data:
             self.X_ = X
 
-        if y is not None:
-            X, y = check_X_y(X, y)
-            # if y is not None:
-            for e in y:
-                if e < 0 or e > 1:
-                    raise ValueError('`y` values should belong to [0, 1]')
-
         self.anomaly_detector.fit(X, y, **kwargs)
 
-        if y is None:
-            y = np.ones(len(X))
+        self.fuzzifier.fit(self.anomaly_detector)
 
-        self.fuzzifier.fit(
-            self.anomaly_detector.anomaly_score(X),
-            y,
-            self.anomaly_detector.squared_radius)
+        # self.fuzzifier.fit(
+        #     self.anomaly_detector.anomaly_score(X),
+        #     y,
+        #     self.anomaly_detector.squared_radius
+        # )
 
         return self
 
@@ -122,7 +113,7 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
                                  f' (provided {alpha})')
             return np.array([1 if mu >= alpha else 0 for mu in mus])
 
-    def score(self, X: ArrayLike, y: Sequence[int|float] | NDArray, **kwargs) -> np.floating:
+    def score(self, X: ArrayLike, y: ArrayLike, **kwargs) -> np.floating:
         r"""Compute the fuzzifier score.
 
         Score is obtained as the opposite of MSE between predicted

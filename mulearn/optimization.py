@@ -221,23 +221,33 @@ class GurobiSolver(Solver):
                     if model.Status != GRB.OPTIMAL:
 
                         if model.Status == GRB.ITERATION_LIMIT:
-                            logger.warning('gurobi: optimization terminated because the total number of simplex \
+                            msg = 'gurobi: optimization terminated because the total number of simplex \
                             iterations performed exceeded the value specified in the IterationLimitparameter, \
-                            or because the total number of barrier iterations exceeded the value specified in the BarIterLimit parameter.')
+                            or because the total number of barrier iterations exceeded the value specified in the BarIterLimit parameter.'
+                            logger.warning(msg)
+                            raise RuntimeError(msg)
 
                         elif model.Status == GRB.NODE_LIMIT:
-                            logger.warning('gurobi: optimization terminated because the total number of \
-                            branch-and-cut nodes explored exceeded the value specified in the NodeLimit parameter.')
+                            msg = 'gurobi: optimization terminated because the total number of \
+                            branch-and-cut nodes explored exceeded the value specified in the NodeLimit parameter.'
+                            logger.warning(msg)
+                            raise RuntimeError(msg)
                             
                         elif model.Status == GRB.TIME_LIMIT:
-                            logger.warning('gurobi: optimization terminated because the time expended \
-                            exceeded the value specified in the TimeLimit parameter.')
+                            msg = 'gurobi: optimization terminated because the time expended \
+                            exceeded the value specified in the TimeLimit parameter.'
+                            logger.warning(msg)
+                            raise RuntimeError(msg)
                             
                         elif model.Status == GRB.SUBOPTIMAL:
-                            logger.warning('gurobi: optimization terminated with a sub-optimal solution!')
+                            msg = 'gurobi: optimization terminated with a sub-optimal solution!'
+                            logger.warning(msg)
+                            raise RuntimeWarning(msg)
 
                         else:
-                            logger.warning(f'gurobi: optimal solution not found! ERROR CODE: {model.Status}')
+                            msg = f'gurobi: optimal solution not found! ERROR CODE: {model.Status}'
+                            logger.warning(msg)
+                            raise RuntimeError(msg)
                             
     
                     return [ch.x for ch in chis]
