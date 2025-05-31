@@ -67,17 +67,15 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
 
         self.anomaly_detector.fit(X, y, **kwargs)
 
-        self.fuzzifier.fit(self.anomaly_detector)
-
-        # self.fuzzifier.fit(
-        #     self.anomaly_detector.anomaly_score(X),
-        #     y,
-        #     self.anomaly_detector.squared_radius
-        # )
+        self.fuzzifier.fit(
+            self.anomaly_detector.anomaly_score(X),
+            y,
+            self.anomaly_detector.score_05
+        )
 
         return self
 
-    def decision_function(self, X: ArrayLike) -> NDArray:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         r"""Compute predictions for the membership function.
 
         :param X: Vectors in data space.
@@ -113,7 +111,7 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
                                  f' (provided {alpha})')
             return np.array([1 if mu >= alpha else 0 for mu in mus])
 
-    def score(self, X: ArrayLike, y: ArrayLike, **kwargs) -> np.floating:
+    def score(self, X: ArrayLike, y: ArrayLike, **kwargs) -> np.float_:
         r"""Compute the fuzzifier score.
 
         Score is obtained as the opposite of MSE between predicted
@@ -127,12 +125,8 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
         :returns: `float` -- opposite of MSE between the predictions for the
           elements in `X` w.r.t. the labels in `y`.
         """
-        check_X_y(X, y)
+        X, y = check_X_y(X, y)
 
-        #TODO - Da controllare dopo aver implementato i controlli sul fit (chis e status del solver)
-        # if self.anomaly_detector.estimated_membership is None:
-        #     return -np.inf
-        # else:
         return -np.mean((self.decision_function(X) - y) ** 2)
 
     def get_profile(self) -> list:

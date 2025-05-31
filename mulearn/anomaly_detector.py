@@ -24,10 +24,7 @@ logger = logging.getLogger(__name__)
 class AnomalyDetector:
     """Base class for anomaly detectors.
 
-    The base class for anomaly detectors is AnomalyDetector: it defines the signatures of the basic methods. 
-    - `fit`, trains the anomaly detector to be able to get the anomaly score for each data point.
-    - `get_membership`, returning the membership function inferred from data
-    - `get_profile`, computing information exploitable in order to visualize the fuzzifier in graphical form.
+    The base class for anomaly detectors is AnomalyDetector
     """
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, **kwargs) -> Self:
@@ -37,12 +34,14 @@ class AnomalyDetector:
         :type X: iterable of `float` vectors having the same length
         :param y: Membership for the vectors in `X`, defaults to `None`.
         :type y: iterable of `float` having the same length of `X`
+        :raises: RuntimeWarning if the solver found a suboptimal solution
+        :raises: RuntimeError if the solver ended with an error
         :returns: self -- the trained model.
         """
         raise NotImplementedError(
             'The base class does not implement the `fit` method')
 
-    def score_samples(self, X: ArrayLike) -> NDArray:
+    def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Is the most direct score that an implementation can give.
         The lower the more anomalous.
@@ -54,7 +53,7 @@ class AnomalyDetector:
         raise NotImplementedError(
             'The base class does not implement the `score_samples` method')
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray:
+    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Get the anomaly scores for each of the original points data.
         Is used by the fuzzifier to compute the membership for each data point.
@@ -67,7 +66,7 @@ class AnomalyDetector:
         raise NotImplementedError(
             'The base class does not implement the `anomaly_score` method')
 
-    def decision_function(self, X: ArrayLike) -> NDArray:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Shifts the `score_samples` score to be able to then predict.
         
@@ -78,7 +77,7 @@ class AnomalyDetector:
         raise NotImplementedError(
             'The base class does not implement the `decision_function` method')
 
-    def predict(self, X: ArrayLike) -> NDArray:
+    def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
         Returns the array of predictions for each data point in X.
         
@@ -106,6 +105,16 @@ class AnomalyDetector:
 
 
 class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
+    """Implementation of Support Vector Machine for AnomalyDetector.
+    
+    :param fixed_term_: fixed term of the equation
+    :type fixed_term: `ArrayLike`
+    :param chis_: estimated solutiton parameters
+    :type chis_: `ArrayLike`
+    :param squared_radius_: estimated hypersphere radius
+    :type squared_radius_: `float`
+    """
+
     def __init__(self,
                  c: float = 1,
                  k: kernel.Kernel = kernel.GaussianKernel(),
@@ -155,6 +164,8 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
           independent variables of the optimization problem, defaults to
           `None`.
         :type warm_start: `bool`
+        :raises: RuntimeWarning if the solver found a suboptimal solution
+        :raises: RuntimeError if the solver ended with an error
         :returns: self -- the trained model.
         """
 
@@ -179,7 +190,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         else:
             self._gram = np.array([self.k.compute(x1, X) for x1 in X])
 
-        self.chis_ = self.solver.solve(X, y, self.c, self._gram)
+        self.chis_: ArrayLike = self.solver.solve(X, y, self.c, self._gram)
 
         self.fixed_term_ = np.array(self.chis_).dot(self._gram.dot(self.chis_))
 
@@ -196,7 +207,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray:
+    def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         The bigger the more anomalous.
 
@@ -211,8 +222,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         ret = t1 -2 * t2 + self.fixed_term_
         return ret
 
-
-    def anomaly_score(self, X: ArrayLike) -> NDArray:
+    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Get the anomaly scores for each of the original points data
         Is used by the fuzzifier to compute the membership for each data point.
@@ -225,7 +235,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         """
         return self.score_samples(X)
 
-    def decision_function(self, X: ArrayLike) -> NDArray:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Shifts the `score_samples` score to be able to then predict.
         
@@ -235,7 +245,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         """
         return self.score_samples(X) - self.squared_radius_
 
-    def predict(self, X: ArrayLike) -> NDArray:
+    def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
         Returns the array of predictions for each data point in X.
 
@@ -244,7 +254,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
         """
         predictions = [1 if value>=0 else -1 for value in self.decision_function(X)]
-        return np.asarray(predictions)
+        return predictions
 
 
 class IFAnomalyDetector(AnomalyDetector):
@@ -297,6 +307,8 @@ class IFAnomalyDetector(AnomalyDetector):
           independent variables of the optimization problem, defaults to
           `None`.
         :type warm_start: `bool`
+        :raises: RuntimeWarning if the solver found a suboptimal solution
+        :raises: RuntimeError if the solver ended with an error
         :returns: self -- the trained model.
         """
 
@@ -311,7 +323,7 @@ class IFAnomalyDetector(AnomalyDetector):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray:
+    def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         The lower the more anomalous.
 
@@ -321,7 +333,7 @@ class IFAnomalyDetector(AnomalyDetector):
         """
         return self._forest.score_samples(X)
     
-    def anomaly_score(self, X: ArrayLike) -> NDArray:
+    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Get the anomaly scores for each of the original points data
         Is used by the fuzzifier to compute the membership for each data point.
@@ -337,7 +349,7 @@ class IFAnomalyDetector(AnomalyDetector):
         distances = (anomaly_scores - min_score) / (max_score - min_score)
         return distances
 
-    def decision_function(self, X: ArrayLike) -> NDArray:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Shifts the `score_samples` score to be able to then predict.
         
@@ -347,7 +359,7 @@ class IFAnomalyDetector(AnomalyDetector):
         """
         return self._forest.decision_function(X)
 
-    def predict(self, X: ArrayLike) -> NDArray:
+    def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
         Returns the array of predictions for each data point in X.
 
@@ -424,7 +436,7 @@ class LOFAnomalyDetector(AnomalyDetector):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray:
+    def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Is the opposite of the Local Outlier Factor of X.
         The lower the more anomalous.
@@ -435,7 +447,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         """
         return self._lof.score_samples(X)
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray:
+    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Get the anomaly scores for each of the original points data
         Is used by the fuzzifier to compute the membership for each data point.
@@ -451,7 +463,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         distances = (anomaly_scores - min_score) / (max_score - min_score)
         return distances
 
-    def decision_function(self, X: ArrayLike) -> NDArray:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Shifts the `score_samples` score to be able to then predict.
         
@@ -461,7 +473,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         """
         return self._lof.decision_function(X)
 
-    def predict(self, X: ArrayLike) -> NDArray:
+    def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
         Returns the array of predictions for each data point in X.
 

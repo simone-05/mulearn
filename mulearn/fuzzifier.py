@@ -39,17 +39,17 @@ class Fuzzifier:
     def __init__(self, profile):
         self.profile = profile
 
-    def fit(self, squared_R, mu, squared_radius):
+    def fit(self, anomaly_score, mu, score_05):
         r"""Fit the fuzzifier on training data.
 
-        :param squared_R: iterable of squared distance of the images of vectors
+        :param anomaly_score: iterable of squared distance of the images of vectors
           in data space w.r.t. the center of the fuzzy set in feature space.
-        :type squared_R: iterable of `float`
+        :type anomaly_score: iterable of `float`
         :param mu: membership degrees of the vectors having originated
-          `squared_R`.
-        :type mu: vector of floats having the same length of `squared_R`
-        :param squared_radius: radius of the fuzzy set in feature space.
-        :type squared_radius: float
+          `anomaly_score`.
+        :type mu: vector of floats having the same length of `anomaly_score`
+        :param score_05: radius of the fuzzy set in feature space.
+        :type score_05: float
         """
         raise NotImplementedError(
             'The base class does not implement the `fit` method')
@@ -63,7 +63,7 @@ class Fuzzifier:
         raise NotImplementedError(
             'The base class does not implement the `get_membership` method')
 
-    def get_profile(self, squared_R):
+    def get_profile(self, anomaly_score):
         r"""Return information about the learnt membership function profile.
 
         The profile of a membership function $\mu: X \rightarrow [0, 1]$ is
@@ -94,9 +94,9 @@ class Fuzzifier:
         :returns: list -- $[r_{\mathrm{data}}, \tilde{r}_\mathrm{data}, e]$.
 
         """
-        rdata_synth = np.linspace(0, max(squared_R) * 1.1, 200)
+        rdata_synth = np.linspace(0, max(anomaly_score) * 1.1, 200)
         estimate = self.get_membership(rdata_synth)
-        return [squared_R, rdata_synth, estimate]
+        return [anomaly_score, rdata_synth, estimate]
 
     def __str__(self):
         """Return the string representation of a fuzzifier."""
@@ -151,17 +151,17 @@ class CrispFuzzifier(Fuzzifier):
         """
         super().__init__(profile)
     
-    def fit(self, squared_R, mu, squared_radius):
+    def fit(self, anomaly_score, mu, score_05):
         r"""Fit the fuzzifier on training data.
 
-        :param squared_R: iterable of squared distance of the images of vectors
+        :param anomaly_score: iterable of squared distance of the images of vectors
           in data space w.r.t. the center of the fuzzy set in feature space.
-        :type squared_R: iterable of `float`
+        :type anomaly_score: iterable of `float`
         :param mu: membership degrees of the vectors having originated
-          `squared_R`.
-        :type mu: vector of floats having the same length of `squared_R`
-        :param squared_radius: radius of the fuzzy set in feature space.
-        :type squared_radius: float
+          `anomaly_score`.
+        :type mu: vector of floats having the same length of `anomaly_score`
+        :param score_05: radius of the fuzzy set in feature space.
+        :type score_05: float
 
         :raises: ValueError if self.profile is not set either to `'fixed'` or
           to `'infer'`.
@@ -183,11 +183,11 @@ class CrispFuzzifier(Fuzzifier):
         self.name = 'Crisp'
         self.latex_name = '$\\hat\\mu_{\\text{crisp}}$'
 
-        assert len(squared_R) == len(mu)
+        assert len(anomaly_score) == len(mu)
 
             
         if self.profile == "fixed":
-            self.threshold_ = squared_radius
+            self.threshold_ = score_05
 
         elif self.profile == "infer":
 
@@ -197,7 +197,7 @@ class CrispFuzzifier(Fuzzifier):
                 return result
 
             try:
-                [t_opt], _ = curve_fit(r2_to_mu, squared_R, mu, 
+                [t_opt], _ = curve_fit(r2_to_mu, anomaly_score, mu, 
                                     bounds=((0,), (np.inf,)))
                 self.threshold_ = t_opt
                 
@@ -207,7 +207,7 @@ class CrispFuzzifier(Fuzzifier):
             except RuntimeError:
                 # interpolation could not take place, fall back to fixed profile
                 self.profile = 'fixed'
-                self.fit(squared_R, mu, squared_radius)
+                self.fit(anomaly_score, mu, score_05)
             
         else:
             raise ValueError("'profile' parameter should either be equal to "
@@ -234,17 +234,17 @@ class LinearFuzzifier(Fuzzifier):
         :type profile: str"""
         super().__init__(profile)
 
-    def fit(self, squared_R, mu, squared_radius):
+    def fit(self, anomaly_score, mu, score_05):
         r"""Fit the fuzzifier on training data.
 
-        :param squared_R: iterable of squared distance of the images of vectors
+        :param anomaly_score: iterable of squared distance of the images of vectors
           in data space w.r.t. the center of the fuzzy set in feature space.
-        :type squared_R: iterable of `float`
+        :type anomaly_score: iterable of `float`
         :param mu: membership degrees of the vectors having originated
-          `squared_R`.
-        :type mu: vector of floats having the same length of `squared_R`
-        :param squared_radius: radius of the fuzzy set in feature space.
-        :type squared_radius: float
+          `anomaly_score`.
+        :type mu: vector of floats having the same length of `anomaly_score`
+        :param score_05: radius of the fuzzy set in feature space.
+        :type score_05: float
 
         :raises: ValueError if self.profile is not set to `'fixed'`,
           `'triangular`' or `'infer'`.
@@ -268,11 +268,11 @@ class LinearFuzzifier(Fuzzifier):
         self.name = 'Linear'
         self.latex_name = '$\\hat\\mu_{\\text{lin}}$'
         
-        assert len(squared_R) == len(mu)
+        assert len(anomaly_score) == len(mu)
         
-        r_2_1_guess = np.median([r2 for r2, m in zip (squared_R, mu)
+        r_2_1_guess = np.median([r2 for r2, m in zip (anomaly_score, mu)
                                               if m >= max(mu)*0.99])
-        r_2_0_guess = np.median([r2 for r2, m in zip (squared_R, mu)
+        r_2_0_guess = np.median([r2 for r2, m in zip (anomaly_score, mu)
                                               if m <= min(mu)*1.01])
         r_2_05_guess = (r_2_1_guess + r_2_0_guess) / 2
 
@@ -280,22 +280,22 @@ class LinearFuzzifier(Fuzzifier):
         if self.profile == 'fixed':
             def r2_to_mu(R_2, r_2_1):
 
-                result = [np.clip(1 - 0.5 * (r_2-r_2_1)/(squared_radius-r_2_1),
+                result = [np.clip(1 - 0.5 * (r_2-r_2_1)/(score_05-r_2_1),
                                   0, 1) for r_2 in R_2]
                 
                 return result
 
-            [r_2_1_opt], _ = curve_fit(r2_to_mu, squared_R, mu,
+            [r_2_1_opt], _ = curve_fit(r2_to_mu, anomaly_score, mu,
                                        p0=(r_2_1_guess,),
                                        bounds=((0,), (np.inf,)))
-            self.slope_ = -1 / (2 * (squared_radius - r_2_1_opt))
-            self.intercept_ = 1 + r_2_1_opt / (2 * (squared_radius - r_2_1_opt))
+            self.slope_ = -1 / (2 * (score_05 - r_2_1_opt))
+            self.intercept_ = 1 + r_2_1_opt / (2 * (score_05 - r_2_1_opt))
         
             
         elif self.profile == 'triangular':
             def r2_to_mu(R_2, r_2_05):
                 # TODO: check
-                # return [np.clip(1 - r_2 / (2 * squared_radius),
+                # return [np.clip(1 - r_2 / (2 * score_05),
                 #                 0, 1) - r_2_1
                 #         for r_2 in R_2]
                 return [np.clip(1 - r_2 / (2 * r_2_05),
@@ -303,7 +303,7 @@ class LinearFuzzifier(Fuzzifier):
                         for r_2 in R_2]
 
             try:
-                [r_2_05_opt], _ = curve_fit(r2_to_mu, squared_R, mu,
+                [r_2_05_opt], _ = curve_fit(r2_to_mu, anomaly_score, mu,
                                             p0=(r_2_05_guess,),
                                             bounds=((0,), (np.inf,)))
                 self.slope_ = -1 / (2 * r_2_05_opt)
@@ -311,7 +311,7 @@ class LinearFuzzifier(Fuzzifier):
             except RuntimeError:
                 # interpolation could not take place, fall back to fixed profile
                 self.profile = 'fixed'
-                self.fit(squared_R, mu, squared_radius)
+                self.fit(anomaly_score, mu, score_05)
 
         elif self.profile == 'infer':
 
@@ -320,7 +320,7 @@ class LinearFuzzifier(Fuzzifier):
                         for r_2 in R_2]
 
             try:
-                p_opt, _ = curve_fit(r2_to_mu, squared_R, mu,
+                p_opt, _ = curve_fit(r2_to_mu, anomaly_score, mu,
                                     p0=(r_2_1_guess, r_2_0_guess), 
                                     bounds=((-np.inf, -np.inf),
                                             (np.inf, np.inf,)))
@@ -330,7 +330,7 @@ class LinearFuzzifier(Fuzzifier):
             except RuntimeError:
                 # interpolation could not take place, fall back to fixed profile
                 self.profile = 'fixed'
-                self.fit(squared_R, mu, squared_radius)
+                self.fit(anomaly_score, mu, score_05)
 
         else:
             raise ValueError("'profile' parameter should be equal to "
@@ -368,17 +368,17 @@ class ExponentialFuzzifier(Fuzzifier):
 
         super().__init__(profile)
 
-    def fit(self, squared_R, mu, squared_radius):
+    def fit(self, anomaly_score, mu, score_05):
         r"""Fit the fuzzifier on training data.
 
-        :param squared_R: iterable of squared distance of the images of vectors
+        :param anomaly_score: iterable of squared distance of the images of vectors
           in data space w.r.t. the center of the fuzzy set in feature space.
-        :type squared_R: iterable of `float`
+        :type anomaly_score: iterable of `float`
         :param mu: membership degrees of the vectors having originated
-          `squared_R`.
-        :type mu: vector of floats having the same length of `squared_R`
-        :param squared_radius: radius of the fuzzy set in feature space.
-        :type squared_radius: float
+          `anomaly_score`.
+        :type mu: vector of floats having the same length of `anomaly_score`
+        :param score_05: radius of the fuzzy set in feature space.
+        :type score_05: float
         
         :raises: ValueError if self.profile is not set either to `'fixed'`,
           `'infer'` or to a numeric value in $[0, 1]$.
@@ -397,7 +397,7 @@ class ExponentialFuzzifier(Fuzzifier):
         - when `self.profile`=`'fixed'` the membership profile will be equal
           equal to 0.5 when $r$ is equal to the learnt square radius of the
           sphere,
-        - induced via interpolation of `squared_R` and `mu` when
+        - induced via interpolation of `anomaly_score` and `mu` when
           `self.profile`=`'infer'` and
         - manually set when `self.profile` is a number $\alpha \in [0, 1]$, the
           latter now implying that the fuzzifier value will be 0.5 exactly when
@@ -408,28 +408,28 @@ class ExponentialFuzzifier(Fuzzifier):
         self.name = "Exponential"
         self.latex_name = r"$\hat\mu_{\text{exp}}$"
 
-        assert len(squared_R) == len(mu)
+        assert len(anomaly_score) == len(mu)
 
         if isinstance(self.profile, (int, float)):
             if self.profile < 0 or self.profile > 1:
                 raise ValueError("profile must be set to a number between 0 "
                                  "and 1, or either to 'fixed' or 'infer'")
 
-        r_2_1_guess = np.median([r_2 for r_2, m in zip(squared_R, mu)
+        r_2_1_guess = np.median([r_2 for r_2, m in zip(anomaly_score, mu)
                                 if m >= max(mu)*0.9])
-        s_guess = np.log(2) / (squared_radius - r_2_1_guess)
+        s_guess = np.log(2) / (score_05 - r_2_1_guess)
 
         if self.profile == "fixed":
             def r2_to_mu(R_2, r_2_1):
                 return [exp_clip(-np.log(2) * \
-                                 (r_2 - r_2_1) / (squared_radius - r_2_1))
+                                 (r_2 - r_2_1) / (score_05 - r_2_1))
                         for r_2 in R_2]
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                [r_2_1_opt], _ = curve_fit(r2_to_mu, squared_R, mu,
+                [r_2_1_opt], _ = curve_fit(r2_to_mu, anomaly_score, mu,
                                            p0=(r_2_1_guess,), maxfev=2000,
                                            bounds=((0,), (np.inf,)))
-                denominator = squared_radius - r_2_1_opt
+                denominator = score_05 - r_2_1_opt
                 self.slope_ = -np.log(2) / denominator
                 self.intercept_ = r_2_1_opt * np.log(2) / denominator
 
@@ -438,7 +438,7 @@ class ExponentialFuzzifier(Fuzzifier):
                 return [exp_clip(-(r_2 - r_2_1) / s) for r_2 in R_2]
 
             try:
-                p_opt, _ = curve_fit(r2_to_mu, squared_R, mu,
+                p_opt, _ = curve_fit(r2_to_mu, anomaly_score, mu,
                                     p0=(r_2_1_guess, s_guess),
                                     # bounds=((0, 0), (np.inf, np.inf)),
                                     maxfev=2000)
@@ -448,12 +448,12 @@ class ExponentialFuzzifier(Fuzzifier):
             except RuntimeError:
                 # interpolation could not take place, fall back to fixed profile
                 self.profile = 'fixed'
-                self.fit(squared_R, mu, squared_radius)
+                self.fit(anomaly_score, mu, score_05)
 
         elif isinstance(self.profile, (int, float)):
             alpha = self.profile
             def r2_to_mu(R_2, r_2_1):
-                inner = [r_2 - r_2_1 for r_2 in squared_R if r_2 > r_2_1]
+                inner = [r_2 - r_2_1 for r_2 in anomaly_score if r_2 > r_2_1]
                 if len(inner) > 0:
                     q = np.percentile(inner, 100 * alpha)
                     return [exp_clip(np.log(alpha) / q * (r_2 - r_2_1))
@@ -463,17 +463,17 @@ class ExponentialFuzzifier(Fuzzifier):
                     return [1] * len(R_2)
 
             try:
-                [r_2_1_opt], _ = curve_fit(r2_to_mu, squared_R, mu,
+                [r_2_1_opt], _ = curve_fit(r2_to_mu, anomaly_score, mu,
                                         p0=(r_2_1_guess,),
                                         bounds=((0,), (np.inf,)))
-                inner = [r_2 - r_2_1_opt for r_2 in squared_R if r_2 > r_2_1_opt]
+                inner = [r_2 - r_2_1_opt for r_2 in anomaly_score if r_2 > r_2_1_opt]
                 q = np.percentile(inner, 100 * alpha)
                 self.slope_ = np.log(alpha) / q
                 self.intercept_ = -r_2_1_opt * np.log(alpha) / q
             except RuntimeError:
                 # interpolation could not take place, fall back to fixed profile
                 self.profile = 'fixed'
-                self.fit(squared_R, mu, squared_radius)
+                self.fit(anomaly_score, mu, score_05)
             
         else:
             raise ValueError("'self.profile' attribute should be equal to "
@@ -512,17 +512,17 @@ class QuantileConstantPiecewiseFuzzifier(Fuzzifier):
 
         super().__init__(profile)
 
-    def fit(self, squared_R, mu, squared_radius):
+    def fit(self, anomaly_score, mu, score_05):
         """Fit the fuzzifier on training data.
 
-        :param squared_R: iterable of squared distance of the images of vectors
+        :param anomaly_score: iterable of squared distance of the images of vectors
           in data space w.r.t. the center of the fuzzy set in feature space.
-        :type squared_R: iterable of `float`
+        :type anomaly_score: iterable of `float`
         :param mu: membership degrees of the vectors having originated
-          `squared_R`.
-        :type mu: vector of floats having the same length of `squared_R`
-        :param squared_radius: radius of the fuzzy set in feature space.
-        :type squared_radius: float
+          `anomaly_score`.
+        :type mu: vector of floats having the same length of `anomaly_score`
+        :param score_05: radius of the fuzzy set in feature space.
+        :type score_05: float
         
         :raises: ValueError if self.profile is not set either to `'fixed'`,
           `'infer'` or to a numeric value in $[0, 1]$.
@@ -538,12 +538,12 @@ class QuantileConstantPiecewiseFuzzifier(Fuzzifier):
         self.name = 'QuantileConstPiecewise'
         self.latex_name = '$\\hat\\mu_{\\text{q\\_const}}$'
 
-        assert len(squared_R) == len(mu)
+        assert len(anomaly_score) == len(mu)
 
-        self.r_2_1_ = np.median([r_2 for r_2, m in zip(squared_R, mu)
+        self.r_2_1_ = np.median([r_2 for r_2, m in zip(anomaly_score, mu)
                                if m >= max(mu)*0.99])
         
-        external_dist = [r_2 - self.r_2_1_ for r_2 in squared_R
+        external_dist = [r_2 - self.r_2_1_ for r_2 in anomaly_score
                                            if r_2 > self.r_2_1_]
               
         if external_dist:
@@ -582,17 +582,17 @@ class QuantileLinearPiecewiseFuzzifier(Fuzzifier):
 
         super().__init__(profile)
 
-    def fit(self, squared_R, mu, squared_radius):
+    def fit(self, anomaly_score, mu, score_05):
         """Fit the fuzzifier on training data.
 
-        :param squared_R: iterable of squared distance of the images of vectors
+        :param anomaly_score: iterable of squared distance of the images of vectors
           in data space w.r.t. the center of the fuzzy set in feature space.
-        :type squared_R: iterable of `float`
+        :type anomaly_score: iterable of `float`
         :param mu: membership degrees of the vectors having originated
-          `squared_R`.
-        :type mu: vector of floats having the same length of `squared_R`
-        :param squared_radius: radius of the fuzzy set in feature space.
-        :type squared_radius: float
+          `anomaly_score`.
+        :type mu: vector of floats having the same length of `anomaly_score`
+        :param score_05: radius of the fuzzy set in feature space.
+        :type score_05: float
 
         The piecewise membership function is built so that its steps are chosen
         according to the quartiles of square distances between images of the
@@ -602,13 +602,13 @@ class QuantileLinearPiecewiseFuzzifier(Fuzzifier):
         self.name = 'QuantileLinPiecewise'
         self.latex_name = '$\\hat\\mu_{\\text{q\\_lin}}$'
 
-        assert len(squared_R) == len(mu)
+        assert len(anomaly_score) == len(mu)
 
-        self.r_2_1_ = np.median([r_2 for r_2, m in zip(squared_R, mu)
+        self.r_2_1_ = np.median([r_2 for r_2, m in zip(anomaly_score, mu)
                                if m >= max(mu)*0.99])
         
         
-        external_dist = [r_2 - self.r_2_1_ for r_2 in squared_R
+        external_dist = [r_2 - self.r_2_1_ for r_2 in anomaly_score
                                            if r_2 > self.r_2_1_]
               
         if external_dist:
