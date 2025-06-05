@@ -44,8 +44,7 @@ class AnomalyDetector:
     def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Is the most direct score that an implementation can give.
-        The lower the more anomalous.
-        
+
         :param X: Vectors in data space.
         :type X: iterable of `float` vectors having the same length
         :returns: array with the score for each vector of data
@@ -69,7 +68,7 @@ class AnomalyDetector:
     def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Shifts the `score_samples` score to be able to then predict.
-        
+
         :param X: Vectors in data space.
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
@@ -80,7 +79,7 @@ class AnomalyDetector:
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
         Returns the array of predictions for each data point in X.
-        
+
         :param X: Vectors in data space.
         :type X: iterable of `float` vectors having the same length.
         :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
@@ -106,7 +105,7 @@ class AnomalyDetector:
 
 class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
     """Implementation of Support Vector Machine for AnomalyDetector.
-    
+
     :param fixed_term_: fixed term of the equation
     :type fixed_term: `ArrayLike`
     :param chis_: estimated solutiton parameters
@@ -204,6 +203,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
             return self
 
         self.squared_radius_ = np.mean(chi_sq_radius)
+        self.score_05 = self.squared_radius_
 
         return self
 
@@ -238,12 +238,12 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
     def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Shifts the `score_samples` score to be able to then predict.
-        
+
         :param X: Vectors in data space.
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
         """
-        return self.score_samples(X) - self.squared_radius_
+        return self.squared_radius_ - self.score_samples(X)
 
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
@@ -254,7 +254,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
         """
         predictions = [1 if value>=0 else -1 for value in self.decision_function(X)]
-        return predictions
+        return np.array(predictions)
 
 
 class IFAnomalyDetector(AnomalyDetector):
@@ -332,7 +332,7 @@ class IFAnomalyDetector(AnomalyDetector):
         :returns: array with the score for each vector of data
         """
         return self._forest.score_samples(X)
-    
+
     def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Get the anomaly scores for each of the original points data
@@ -352,7 +352,7 @@ class IFAnomalyDetector(AnomalyDetector):
     def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Shifts the `score_samples` score to be able to then predict.
-        
+
         :param X: Vectors in data space.
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
@@ -466,7 +466,7 @@ class LOFAnomalyDetector(AnomalyDetector):
     def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
         """
         Shifts the `score_samples` score to be able to then predict.
-        
+
         :param X: Vectors in data space.
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.

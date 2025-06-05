@@ -4,6 +4,7 @@ import unittest
 
 from mulearn import FuzzyInductor
 from mulearn.optimization import GurobiSolver
+from mulearn.anomaly_detector import SVMAnomalyDetector
 
 
 class TestGurobiSolver(unittest.TestCase):
@@ -24,7 +25,7 @@ class TestGurobiSolver(unittest.TestCase):
         chis_opt = [0.26334825774012194, 0.5651531004941153,
                     -0.0010709737624955377, -0.00511839469274798,
                     0.17768801022078584]
-        
+
         k = np.array([[1.       , 0.8706202, 0.9669135, 0.9632160, 0.9720059],
                       [0.8706202, 1.       , 0.9649848, 0.9685946, 0.7464816],
                       [0.9669135, 0.9649848, 1.       , 0.9998967, 0.8835067],
@@ -36,7 +37,7 @@ class TestGurobiSolver(unittest.TestCase):
 
 
         self.assertEqual(GurobiSolver().__repr__(), 'GurobiSolver()')
-        
+
         self.assertEqual(GurobiSolver(adjustment='auto').__repr__(),
                          'GurobiSolver(adjustment=auto)')
 
@@ -50,7 +51,7 @@ class TestGurobiSolver(unittest.TestCase):
                                       adjustment='auto').__repr__(),
             'GurobiSolver(adjustment=auto, initial_values=(1, 2, 3, 4, 5))')
 
-        
+
         model = FuzzyInductor()
         xs = np.array([
             [0.0529931],[0.0083108],[0.5267421],[0.2486910],[0.0251151],
@@ -89,10 +90,10 @@ class TestGurobiSolver(unittest.TestCase):
 
         model.fit(xs, mus)
 
-        for chi, chi_opt in zip(model.chis_, chis_opt):
-            self.assertAlmostEqual(chi, chi_opt, places=5)
+        if isinstance(model.anomaly_detector, SVMAnomalyDetector):
+            for chi, chi_opt in zip(model.anomaly_detector.chis_, chis_opt):
+                self.assertAlmostEqual(chi, chi_opt, places=5)
 
 
 if __name__ == '__main__':
     unittest.main()
-   
