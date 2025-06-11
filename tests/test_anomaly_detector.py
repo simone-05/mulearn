@@ -1,8 +1,8 @@
 import unittest
 
 import numpy as np
-from numpy import float_
 from numpy.typing import NDArray
+from sklearn.exceptions import NotFittedError
 
 from mulearn.anomaly_detector import AnomalyDetector, SVMAnomalyDetector, IFAnomalyDetector, LOFAnomalyDetector
 
@@ -13,14 +13,14 @@ class BaseTest(unittest.TestCase):
         self.x = np.random.rand(10, 1)
         self.y = np.random.rand(10)
 
-    def _fit(self, anom_det, supervised=False):
+    def _fit(self, anom_det: AnomalyDetector, supervised: bool = False):
         if supervised:
             ret = anom_det.fit(self.x, self.y)
         else:
             ret = anom_det.fit(self.x)
         self.assertIsInstance(ret, anom_det.__class__)
 
-    def _test_array_method(self, anom_det, method_name, expected, dtype=float):
+    def _test_array_method(self, anom_det: AnomalyDetector, method_name: str, expected: NDArray, dtype=float):
         method = getattr(anom_det, method_name)
         ret = method(self.x)
         self.assertIsInstance(ret, np.ndarray)
@@ -30,10 +30,14 @@ class BaseTest(unittest.TestCase):
         else:
             np.testing.assert_array_equal(ret, expected)
 
+
 class TestSVMAnomalyDetector(BaseTest):
     def setUp(self):
         super().setUp()
         self.svm_anom_det = SVMAnomalyDetector(random_state=1).fit(self.x)
+
+    def test_fit_raise_notFittedError(self):
+        self.assertRaises(NotFittedError, SVMAnomalyDetector().fit, np.random.rand(5, 1), warm_start=True)
 
     def test_unsupervised_fit(self):
         self._fit(SVMAnomalyDetector())

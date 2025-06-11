@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import Iterable, Literal, Self, Sequence, Callable
+from typing import Literal, Self, Callable
 
 import numpy as np
 from numpy.typing import NDArray, ArrayLike
@@ -168,7 +168,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         :returns: self -- the trained model.
         """
 
-        self._X = X
+        self._X = X.copy()
 
         X, y = super()._check_X_y(X, y)
 
@@ -203,7 +203,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
             return self
 
         self.squared_radius_ = np.mean(chi_sq_radius)
-        self.score_05 = self.squared_radius_
+        self.score_05_ = self.squared_radius_
 
         return self
 
@@ -320,6 +320,7 @@ class IFAnomalyDetector(AnomalyDetector):
         iso_forest.fit(np.array(X))
 
         self._forest = iso_forest
+        self.score_05_ = .5
 
         return self
 
@@ -433,6 +434,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         lof.fit(np.array(X))
 
         self._lof = lof
+        self.score_05_ = .5
 
         return self
 

@@ -1,17 +1,16 @@
 __version__ = '1.1.3'
 
 
-import copy
 import logging
-from typing import Iterable, Self, Sequence
+from typing import Iterable, Self
 import warnings
 
 import numpy as np
 from numpy.typing import NDArray, ArrayLike
 from scipy.optimize import OptimizeWarning
 from sklearn.base import BaseEstimator, RegressorMixin
-from sklearn.exceptions import NotFittedError, FitFailedWarning
-from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
+from sklearn.exceptions import FitFailedWarning
+from sklearn.utils.validation import check_X_y, check_array
 
 import mulearn.fuzzifier as fuzzifier
 import mulearn.anomaly_detector as anomaly_detector
@@ -53,7 +52,7 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
 
     def fit(self, X: ArrayLike , y: ArrayLike | None = None, **kwargs) -> Self:
         r""" Train the anomaly detector to be able to get the anomaly score for each data point.
-        
+
         :param X: Vectors in data space.
         :type X: iterable of `float` vectors having the same length.
         :param y: Labels containing the *gold standard* membership values for the vectors in `X`.
@@ -63,14 +62,17 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
         """
 
         if self.keep_original_data:
-            self.X_ = X
+            self.X_ = X.copy()
 
         self.anomaly_detector.fit(X, y, **kwargs)
+
+        if y is None:
+            y = np.ones(len(X))
 
         self.fuzzifier.fit(
             self.anomaly_detector.anomaly_score(X),
             y,
-            self.anomaly_detector.score_05
+            self.anomaly_detector.score_05_
         )
 
         return self
