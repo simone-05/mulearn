@@ -1,11 +1,25 @@
 import unittest
+import logging
+import warnings
+import multiprocessing as mp
+import itertools as it
+import time
+import copy
 
 import numpy as np
 from numpy.typing import NDArray
+from joblib import Parallel, delayed
 from sklearn.exceptions import NotFittedError
+import sklearn.metrics as metrics
+from sklearn.model_selection import StratifiedKFold, GridSearchCV
+from sklearn.model_selection import cross_val_score
 
 from mulearn.anomaly_detector import AnomalyDetector, SVMAnomalyDetector, IFAnomalyDetector, LOFAnomalyDetector
+from mulearn.kernel import LinearKernel, PolynomialKernel, GaussianKernel, HyperbolicKernel
 
+
+RANDOM_STATE = 1
+NUM_CORES = mp.cpu_count()
 
 class BaseTest(unittest.TestCase):
     def setUp(self):
@@ -34,7 +48,97 @@ class BaseTest(unittest.TestCase):
 class TestSVMAnomalyDetector(BaseTest):
     def setUp(self):
         super().setUp()
-        self.svm_anom_det = SVMAnomalyDetector(random_state=1).fit(self.x)
+        self.svm_anom_det = SVMAnomalyDetector(random_state=RANDOM_STATE).fit(self.x)
+
+    def _make_hp_configurations(self, grid):
+        return [{n: v for n, v in zip(grid.keys(), t)}
+                for t in it.product(*grid.values())]
+
+    def _fit_and_score(self, estimator,
+                    X_trainval, y_trainval,
+                    hp_configuration, model_selection,
+                    scorer=metrics.root_mean_squared_error):
+
+        estimator.set_params(**hp_configuration)
+        current_scores = []
+        for train_index, val_index in model_selection.split(X_trainval, y_trainval):
+            X_train, X_val = X_trainval[train_index], X_trainval[val_index]
+            y_train, y_val = y_trainval[train_index], y_trainval[val_index]
+
+            estimator.fit(X_train, y_train)
+            y_hat = estimator.predict(X_val)
+            score = scorer(y_val, y_hat)
+            current_scores.append(score)
+
+        return np.mean(current_scores), hp_configuration
+
+    def _learn_parallel(self, X, y, estimator, param_grid,
+                    model_selection=StratifiedKFold(n_splits=5,
+                                                    shuffle=True,
+                                                    random_state=RANDOM_STATE),
+                    model_assessment=StratifiedKFold(n_splits=5,
+                                                        shuffle=True,
+                                                        random_state=RANDOM_STATE),
+                    gs_scorer=metrics.root_mean_squared_error,
+                    test_scorers=[metrics.root_mean_squared_error,
+                                    metrics.hinge_loss],
+                    test_scorer_names=['RMSE', 'Hinge'],
+                    n_jobs=-1, pre_dispatch=None):
+
+        if n_jobs == -1:
+            n_jobs = mp.cpu_count()
+
+        ping = time.time()
+
+        outer_scores = []
+
+        for trainval_index, test_index in model_assessment.split(X, y):
+            X_trainval, X_test = X[trainval_index], X[test_index]
+            y_trainval, y_test = y[trainval_index], y[test_index]
+
+            gs_result = Parallel(n_jobs=n_jobs, pre_dispatch=pre_dispatch)( \
+                        delayed(self._fit_and_score)(copy.deepcopy(estimator),
+                                            X_trainval, y_trainval,
+                                            hp_conf,
+                                            model_selection=model_selection,
+                                            scorer=gs_scorer)
+                                for hp_conf in self._make_hp_configurations(param_grid))
+
+            best_conf = sorted(gs_result, key=lambda t: t[0])[0][1]
+            estimator.set_params(**best_conf)
+            estimator.fit(X_trainval, y_trainval)
+
+            y_hat = estimator.predict(X_test)
+            outer_scores.append([score(y_test, y_hat) for score in test_scorers])
+
+        pong = time.time()
+        # Refit estimator with best configuration
+        # of last external cv fold on all data
+        estimator.fit(X, y)
+
+        avg = np.mean(outer_scores, axis=0)
+        std = np.std(outer_scores, axis=0, ddof=1)
+        result = {'model': estimator.__class__.__name__, 'type': 'FINAL'} | \
+                {n + ' mean': m for n, m in zip(test_scorer_names, avg)} | \
+                {n + ' std': s for n, s in zip(test_scorer_names, std)} | \
+                {'time': pong-ping}
+
+        return estimator, best_conf, result
+
+    def test_kernels(self):
+        kernel = [LinearKernel(), PolynomialKernel(2),
+                  GaussianKernel(.1), HyperbolicKernel()]
+        scores = [1.0529941646840044, 1.0146704466104315, 0.6980553781717808, 1.0529941646840044]
+        logging.disable(logging.WARNING)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            for k, s in zip(kernel, scores):
+                svm = SVMAnomalyDetector(k=k, random_state=RANDOM_STATE)
+                svm.fit(self.x, self.y)
+                predicted = svm.predict(self.x)
+                rmse = metrics.root_mean_squared_error(self.y, predicted)
+                self.assertAlmostEqual(s, rmse)
+        logging.disable(logging.NOTSET)
 
     def test_fit_raise_notFittedError(self):
         self.assertRaises(NotFittedError, SVMAnomalyDetector().fit, np.random.rand(5, 1), warm_start=True)
@@ -44,6 +148,38 @@ class TestSVMAnomalyDetector(BaseTest):
 
     def test_supervised_fit(self):
         self._fit(SVMAnomalyDetector(), supervised=True)
+
+    #FIXME - multiprocessing problem
+    # def test_train_parameters(self):
+    #     x = np.random.rand(100, 1)
+    #     y = np.append(np.ones(50), np.zeros(50), axis=0)
+    #     model = SVMAnomalyDetector(random_state=RANDOM_STATE)
+
+    #     grid = {'c': np.linspace(0.1, 0.2, 2),
+    #             'k': [GaussianKernel(.01), GaussianKernel(.1)]}
+    #     cv_out = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+    #     cv_in = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+    #     gs = GridSearchCV(model, grid, scoring='neg_root_mean_squared_error', cv=cv_in, n_jobs=NUM_CORES, pre_dispatch=2*NUM_CORES)
+    #     score = cross_val_score(gs, x, y, scoring='neg_root_mean_squared_error', cv=cv_out)
+    #     expected = np.array([-0.83666003, -1.04880885, -0.70710678, -0.83666003, -0.9486833])
+
+    #     for s, e in zip(score, expected):
+    #         self.assertAlmostEqual(s, e)
+
+    # FIXME - multiprocessing problem
+    # def test_custom_train(self):
+    #     x = np.random.rand(100, 1)
+    #     y = np.append(np.ones(50), np.zeros(50), axis=0)
+    #     model = SVMAnomalyDetector(random_state=RANDOM_STATE)
+
+    #     grid = {'c': np.linspace(0.1, 0.3, 2),
+    #             'k': [GaussianKernel(.1), GaussianKernel(.01)]}
+
+    #     model, best_conf, result = self._learn_parallel(x, y, model, grid, n_jobs=NUM_CORES, pre_dispatch=2*NUM_CORES)
+
+    #     result = {'configuration': best_conf} | result
+    #     self.assertAlmostEqual(result['RMSE mean'], 0.8555586860711453, delta=1E-5)
+    #     self.assertAlmostEqual(result['RMSE std'], 0.10012076887574035, delta=1E-4)
 
     def test_score_samples(self):
         expected = np.array([0.01396709, 0.11422404, 0.11422404, 0.01406838, 0.04814439, 0.06897933, 0.03586173, 0.01151234, 0.01242632, 0.03717787])
@@ -69,7 +205,7 @@ class TestSVMAnomalyDetector(BaseTest):
 class TestIFAnomalyDetector(BaseTest):
     def setUp(self):
         super().setUp()
-        self.if_anom_det = IFAnomalyDetector(random_state=1).fit(self.x)
+        self.if_anom_det = IFAnomalyDetector(random_state=RANDOM_STATE).fit(self.x)
 
     def test_unsupervised_fit(self):
         self._fit(IFAnomalyDetector())

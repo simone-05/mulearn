@@ -35,6 +35,15 @@ try:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     import tensorflow as tf
 
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(f'Couldn\'t set "memory growth" to True fro gpu: {gpu}')
+            print(e)
+
     tensorflow_ok = True
     from tensorflow.keras.optimizers import Adam
 
@@ -86,7 +95,7 @@ class Solver:
           of the problem."""
         if c <= 0:
             raise ValueError('c should be positive')
-        
+
         mus = np.array(mus)
         chis = self.solve_problem(xs, mus, c, k)
 
@@ -94,7 +103,7 @@ class Solver:
                     for ch, l, u in zip(chis, -c * (1 - mus), c * mus)] # noqa
 
         return chis_opt
-    
+
     def __eq__(self, other):
         """Check solver equality w.r.t. other objects."""
         return type(self) is type(other) and self.__dict__ == other.__dict__
@@ -139,10 +148,10 @@ class GurobiSolver(Solver):
 
     def solve_problem(self, xs, mus, c, k):
             """Optimize via gurobi.
-    
+
             Build and solve the constrained optimization problem at the basis
             of the fuzzy learning procedure using the gurobi API.
-    
+
             :param xs: objects in training set.
             :type xs: iterable
             :param mus: membership values for the objects in `xs`.
@@ -159,9 +168,9 @@ class GurobiSolver(Solver):
 
             if not gurobi_ok:
                 raise ValueError('gurobi not available')
-    
+
             m = len(xs)
-    
+
             with Env(empty=True) as env:
                 env.setParam('OutputFlag', 0)
                 env.start()
@@ -177,30 +186,30 @@ class GurobiSolver(Solver):
                                      vtype=GRB.CONTINUOUS)
                     else:
                         model.addVars(name=[f'chi_{i}' for i in range(m)], vtype=GRB.CONTINUOUS)
-    
+
                     model.update()
                     chis = np.array(model.getVars())
 
                     if self.initial_values is not None:
                         for c, i in zip(chis, self.initial_values):
                             c.start = i
-                
+
                     obj = QuadExpr()
 
                     obj.add(chis.dot(k.dot(chis)))
 
                     obj.add(chis.dot(-1*np.diag(k)))
-    
+
                     if self.adjustment and self.adjustment != 'auto':
                         obj.add(self.adjustment * chis.dot(chis))
-    
+
                     model.setObjective(obj, GRB.MINIMIZE)
-    
+
                     constEqual = LinExpr()
                     constEqual.add(sum(chis), 1.0)
-    
+
                     model.addConstr(constEqual == 1)
-    
+
                     try:
                         model.optimize()
                     except GurobiError as e:
@@ -213,11 +222,11 @@ class GurobiSolver(Solver):
 
                             obj.add(a * chis.dot(chis))
                             model.setObjective(obj, GRB.MINIMIZE)
-    
+
                             model.optimize()
                         else:
                             raise e
-    
+
                     if model.Status != GRB.OPTIMAL:
 
                         if model.Status == GRB.ITERATION_LIMIT:
@@ -232,13 +241,13 @@ class GurobiSolver(Solver):
                             branch-and-cut nodes explored exceeded the value specified in the NodeLimit parameter.'
                             logger.warning(msg)
                             raise RuntimeError(msg)
-                            
+
                         elif model.Status == GRB.TIME_LIMIT:
                             msg = 'gurobi: optimization terminated because the time expended \
                             exceeded the value specified in the TimeLimit parameter.'
                             logger.warning(msg)
                             raise RuntimeError(msg)
-                            
+
                         elif model.Status == GRB.SUBOPTIMAL:
                             msg = 'gurobi: optimization terminated with a sub-optimal solution!'
                             logger.warning(msg)
@@ -248,11 +257,11 @@ class GurobiSolver(Solver):
                             msg = f'gurobi: optimal solution not found! ERROR CODE: {model.Status}'
                             logger.warning(msg)
                             raise RuntimeError(msg)
-                            
-    
+
+
                     return [ch.x for ch in chis]
 
-    
+
     def __repr__(self):
         args = []
 
@@ -319,20 +328,20 @@ class TensorFlowSolver(Solver):
         """Solves the lagrangian relaxation for a constrained optimization
         problem and returns its result. The structure of the primal problem
         is the following
-        
+
         min x.T Q x + q.T x
         subject to
         A x = b
         C x <= d
-        
+
         where .T denotes the transposition operator. Optimization takes place
         in a iterated two-steps procedure: an outer process devoted to modifying
         the values of the lagrange multipliers, and an inner process working on
         the primal variables.
-        
+
         The arguments are as follows, given n as the number of variables of
         the primal problem (i.e., the length of x)
-        
+
         - Q: n x n matrix containing the quadratic coefficients of the cost
         function;
         - q: vector containing the n linear coefficients of the cost function
@@ -349,7 +358,7 @@ class TensorFlowSolver(Solver):
         - window_width: width of the moving window on the objective function for
         the *inner* optimization process
         - verbose: boolean flag triggering verbose output
-        
+
         returns
         """
 
@@ -361,21 +370,21 @@ class TensorFlowSolver(Solver):
                         dtype=tf.float32)
         Q = tf.constant(np.array(Q), dtype='float32')
         q = tf.constant(np.array(q), dtype='float32')
-        
+
         A = np.array(A)
         s = len(A)
         C = np.array(C)
         b = np.array(b)
         d = np.array(d)
-        
+
         M = np.vstack([A, -A, C])
         m = np.hstack([b, -b, d])
         lambda_ = tf.constant(np.random.random(len(m)), dtype='float32')
-        
+
         M = tf.constant(M, dtype='float32')
         m = tf.constant(m, dtype='float32')
 
-        
+
         def original_objective():
             def obj():
                 return tf.tensordot(tf.linalg.matvec(Q, x), x, axes=1) + \
@@ -398,7 +407,7 @@ class TensorFlowSolver(Solver):
         prev_orig = np.inf
 
         i = 0
-        
+
         while i < max_iter and (gap<0 or gap > max_gap):
             lagr_obj = lagrangian_objective(lambda_)
             orig_obj = original_objective()
@@ -409,8 +418,8 @@ class TensorFlowSolver(Solver):
             window_width = 30
             window = list(np.logspace(1, window_width, window_width))
             # this is to ensure a high value for the standard deviation
-            # of the elements to which the window has been initialized 
-            
+            # of the elements to which the window has been initialized
+
             while (np.std(window)/abs(np.mean(window)) > 0.001 or t < 100) \
                 and t < 1000:
                 self.optimizer.minimize(lagr_obj, var_list=x)
@@ -420,27 +429,27 @@ class TensorFlowSolver(Solver):
                 t += 1
                 window = window[1:]
                 window.append(curr_lagr)
-            
+
             curr_orig = orig_obj().numpy()
             if curr_orig < prev_orig:
                 num_bad_iterations += 1
 
             prev_orig = curr_orig
 
-            
+
             obj_val.append(curr_orig)
             lagr_val.append(curr_lagr)
-            
+
             subgradient = (m - tf.linalg.matvec(M, x)).numpy()
             gap = tf.tensordot(lambda_[:2*s], m[:2*s] - \
                 tf.linalg.matvec(M[:2*s], x), axes=1).numpy()
             gap_val.append(gap)
-            
+
             if verbose and i%1 == 0:
                 print(f'i={i}, dual={lagr_obj().numpy():.3f}, '
                     f'prim={orig_obj().numpy():.3f}, '
                     f'gap={gap:.6f}')
-            
+
             alpha = alpha_0 / num_bad_iterations
             lambda_ = tf.maximum(0, lambda_ + alpha * subgradient)
 
@@ -475,7 +484,7 @@ class TensorFlowSolver(Solver):
         else:
             raise ValueError("`initial_values` should either be set to "
                              "'random' or to a list of initial values.")
-        
+
         x = alphas + betas
 
         K11 = np.array([[-mu_i * mu_j for mu_j in mus] for mu_i in mus]) * k

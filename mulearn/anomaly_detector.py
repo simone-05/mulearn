@@ -41,7 +41,7 @@ class AnomalyDetector:
         raise NotImplementedError(
             'The base class does not implement the `fit` method')
 
-    def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
+    def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Is the most direct score that an implementation can give.
 
@@ -52,7 +52,7 @@ class AnomalyDetector:
         raise NotImplementedError(
             'The base class does not implement the `score_samples` method')
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
+    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Get the anomaly scores for each of the original points data.
         Is used by the fuzzifier to compute the membership for each data point.
@@ -65,7 +65,7 @@ class AnomalyDetector:
         raise NotImplementedError(
             'The base class does not implement the `anomaly_score` method')
 
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Shifts the `score_samples` score to be able to then predict.
 
@@ -207,7 +207,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
+    def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         The bigger the more anomalous.
 
@@ -222,7 +222,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         ret = t1 -2 * t2 + self.fixed_term_
         return ret
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
+    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Get the anomaly scores for each of the original points data
         Is used by the fuzzifier to compute the membership for each data point.
@@ -235,7 +235,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         """
         return self.score_samples(X)
 
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Shifts the `score_samples` score to be able to then predict.
 
@@ -324,7 +324,7 @@ class IFAnomalyDetector(AnomalyDetector):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
+    def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         The lower the more anomalous.
 
@@ -334,7 +334,7 @@ class IFAnomalyDetector(AnomalyDetector):
         """
         return self._forest.score_samples(X)
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
+    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Get the anomaly scores for each of the original points data
         Is used by the fuzzifier to compute the membership for each data point.
@@ -350,7 +350,7 @@ class IFAnomalyDetector(AnomalyDetector):
         distances = (anomaly_scores - min_score) / (max_score - min_score)
         return distances
 
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Shifts the `score_samples` score to be able to then predict.
 
@@ -438,7 +438,7 @@ class LOFAnomalyDetector(AnomalyDetector):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray[np.float_]:
+    def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Is the opposite of the Local Outlier Factor of X.
         The lower the more anomalous.
@@ -449,7 +449,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         """
         return self._lof.score_samples(X)
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float_]:
+    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Get the anomaly scores for each of the original points data
         Is used by the fuzzifier to compute the membership for each data point.
@@ -465,7 +465,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         distances = (anomaly_scores - min_score) / (max_score - min_score)
         return distances
 
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         """
         Shifts the `score_samples` score to be able to then predict.
 

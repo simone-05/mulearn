@@ -43,12 +43,12 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
         self.keep_original_data = keep_original_data
 
     def __repr__(self, **kwargs):
-        raise NotImplementedError(
-            'The base class does not implement the `__repr__` method')
+        return f"FuzzyInductor(fuzzifier={self.fuzzifier}, anomaly_detector={self.anomaly_detector}, keep_original_data={self.keep_original_data})"
 
     def __eq__(self, other):
-        raise NotImplementedError(
-            'The base class does not implement the `__eq__` method')
+        return (type(self) is type(other) and \
+                 self.fuzzifier == other.fuzzifier and self.anomaly_detector == other.anomaly_detector and \
+                self.keep_original_data == other.keep_original_data)
 
     def fit(self, X: ArrayLike , y: ArrayLike | None = None, **kwargs) -> Self:
         r""" Train the anomaly detector to be able to get the anomaly score for each data point.
@@ -77,7 +77,7 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
 
         return self
 
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float_]:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         r"""Compute predictions for the membership function.
 
         :param X: Vectors in data space.
@@ -113,7 +113,7 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
                                  f' (provided {alpha})')
             return np.array([1 if mu >= alpha else 0 for mu in mus])
 
-    def score(self, X: ArrayLike, y: ArrayLike, **kwargs) -> np.float_:
+    def score(self, X: ArrayLike, y: ArrayLike, **kwargs) -> np.float64:
         r"""Compute the fuzzifier score.
 
         Score is obtained as the opposite of MSE between predicted

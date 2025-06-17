@@ -1,10 +1,11 @@
 import unittest
 
 import numpy as np
-from numpy.typing import NDArray
+import pickle
 
 from mulearn import FuzzyInductor
 from mulearn.anomaly_detector import IFAnomalyDetector, SVMAnomalyDetector
+
 
 class TestFuzzyInductor(unittest.TestCase):
     def setUp(self):
@@ -13,6 +14,13 @@ class TestFuzzyInductor(unittest.TestCase):
         self.y = np.random.rand(10)
         self.fi = FuzzyInductor()
         self.fitted_fi = FuzzyInductor(anomaly_detector=IFAnomalyDetector(random_state=1)).fit(self.x)
+
+    def test_serialization(self):
+        fi = FuzzyInductor(anomaly_detector=IFAnomalyDetector())
+        fi.fit(self.x, self.y)
+        s = pickle.dumps(fi)
+        fi_clone = pickle.loads(s)
+        self.assertEqual(fi, fi_clone)
 
     def test_supervised_fit(self):
         ret1 = self.fi.fit(self.x)
@@ -71,3 +79,6 @@ class TestFuzzyInductor(unittest.TestCase):
         self.assertIsInstance(ret[2], np.ndarray)
         self.assertEqual(ret[2].dtype, float)
         np.testing.assert_allclose(ret[2][:5], expected2, atol=1e-5)
+
+if __name__ == '__main__':
+    unittest.main()
