@@ -9,11 +9,11 @@ import numpy as np
 from numpy.typing import NDArray, ArrayLike
 from numpy.random import RandomState
 from sklearn.base import BaseEstimator
+from sklearn.dummy import check_random_state
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
-from sklearn.utils import check_random_state
 
 import mulearn.kernel as kernel
 from mulearn.optimization import Solver, GurobiSolver
@@ -21,7 +21,7 @@ from mulearn.optimization import Solver, GurobiSolver
 logger = logging.getLogger(__name__)
 
 
-class AnomalyDetector:
+class AnomalyDetector(BaseEstimator):
     """Base class for anomaly detectors.
 
     The base class for anomaly detectors is AnomalyDetector
@@ -103,7 +103,7 @@ class AnomalyDetector:
         return X, y
 
 
-class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
+class SVMAnomalyDetector(AnomalyDetector):
     """Implementation of Support Vector Machine for AnomalyDetector.
 
     :param fixed_term_: fixed term of the equation
@@ -117,8 +117,7 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
     def __init__(self,
                  c: float = 1,
                  k: kernel.Kernel = kernel.GaussianKernel(),
-                 solver: Solver = GurobiSolver(),
-                 random_state: int | RandomState | None = None):
+                 solver: Solver = GurobiSolver()):
         """Create an instance of :class:`SVMAnomalyDetector`.
 
         :param c: Trade-off constant, defaults to 1.
@@ -128,14 +127,11 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
         :param solver: Solver to be used to obtain the optimization problem
           solution, defaults to `GurobiSolver()`.
         :type solver: :class:`mulearn.optimization.Solver`
-        :param random_state: Seed of the pseudorandom generator.
-        :type random_state: `int`
         """
 
         self.c = c
         self.k = k
         self.solver = solver
-        self.random_state = random_state
 
     def __repr__(self, **kwargs):
         return f'SVMAnomalyDetector(c={self.c}, k={self.k}, ' \
@@ -143,13 +139,17 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
 
     def __eq__(self, other):
         """Check equality w.r.t. other objects."""
-        equal = (type(self) is type(other) and \
-                 self.c == other.c and self.k == other.k)
-        if 'chis_' in self.__dict__:
-            if 'chis_' not in other.__dict__:
-                return False
-            else:
-                return equal and (self.chis_ == other.chis_)
+        equal = (
+            type(self) is type(other) and
+            self.get_params() == other.get_params()
+        )
+        isfitted_self = hasattr(self, 'chis_')
+        isfitted_other = hasattr(other, 'chis_')
+        if isfitted_self and isfitted_other:
+            return equal and (self.chis_ == other.chis_)
+        elif isfitted_self != isfitted_other:
+            return False
+        return equal
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False) -> Self:
         r"""Train the anomaly detector to be able to get the anomaly score for each data point
@@ -174,8 +174,6 @@ class SVMAnomalyDetector(AnomalyDetector, BaseEstimator):
 
         if y is None:
             y = np.ones(len(X))
-
-        self.random_state = check_random_state(self.random_state)
 
         if warm_start:
             check_is_fitted(self, ['chis_'])
@@ -295,6 +293,15 @@ class IFAnomalyDetector(AnomalyDetector):
     def __repr__(self, **kwargs):
         return f'IFAnomalyDetector(trees={self.n_trees}, max_samples={self.max_samples}, contamination={self.contamination}, max_features={self.max_features}, bootstrap={self.bootstrap}, n_jobs={self.n_jobs})'
 
+    def __eq__(self, other):
+        if type(self) is not type(other):
+            return False
+        return (
+            isinstance(self.random_state, int) and
+            isinstance(other.random_state, int) and
+            self.get_params() == other.get_params()
+        )
+
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False) -> Self:
         r"""Train the anomaly detector to be able to get the anomaly score for each data point
 
@@ -314,9 +321,9 @@ class IFAnomalyDetector(AnomalyDetector):
 
         X, y = super()._check_X_y(X, y)
 
-        self.random_state = check_random_state(self.random_state)
+        rand_st = check_random_state(self.random_state)
 
-        iso_forest = IsolationForest(n_estimators=self.n_trees, max_samples=self.max_features, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=self.random_state, warm_start=warm_start)
+        iso_forest = IsolationForest(n_estimators=self.n_trees, max_samples=self.max_features, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=rand_st, warm_start=warm_start)
         iso_forest.fit(np.array(X))
 
         self._forest = iso_forest
@@ -416,6 +423,11 @@ class LOFAnomalyDetector(AnomalyDetector):
 
     def __repr__(self, **kwargs):
         return f'LOFFuzzyInductor(n_neighbors={self.n_neighbors}, algorithm={self.algorithm}, leaf_size={self.leaf_size}, metric={self.metric}, p={self.p}, metric_params={self.metric_params}, contamination={self.contamination}, novelty={self.novelty}, n_jobs={self.n_jobs})'
+
+    def __eq__(self, other):
+        if type(self) is not type(other):
+            return False
+        return self.get_params() == other.get_params()
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None) -> Self:
         r"""Train the anomaly detector to be able to get the anomaly score for each data point
