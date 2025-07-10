@@ -17,6 +17,7 @@ from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 
 import mulearn.kernel as kernel
 from mulearn.optimization import Solver, GurobiSolver
+from mulearn.supervised_detectors import SupervisedIsolationForest
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +263,7 @@ class IFAnomalyDetector(AnomalyDetector):
                  contamination: Literal['auto'] | float = 'auto',
                  max_features: int | float = 1.0,
                  bootstrap: bool = False,
+                 max_depth: int = 100,
                  n_jobs: int | None = -1,
                  random_state: int | RandomState | None = None):
         """Create an instance of :class:`IFAnomalyDetector`.
@@ -276,6 +278,8 @@ class IFAnomalyDetector(AnomalyDetector):
         :type max_features: `int` or `float`
         :param bootstrap: if to reuse samples for trees. If False samples are unique per tree, defaults to `False`.
         :type bootstrap: `bool`
+        :param max_depth: max depth for trees of the supervised algorithm
+        :type max_depth: `int`
         :param n_jobs: number of parallel jobs/threads. If -1 uses all cores, defaults to `None`.
         :type n_jobs: `int`
         :param random_state: set a random state for results reproducibility, defaults to `None`.
@@ -287,6 +291,7 @@ class IFAnomalyDetector(AnomalyDetector):
         self.contamination = contamination
         self.max_features = max_features
         self.bootstrap = bootstrap
+        self.max_depth = max_depth
         self.n_jobs = n_jobs
         self.random_state = random_state
 
@@ -302,7 +307,7 @@ class IFAnomalyDetector(AnomalyDetector):
             self.get_params() == other.get_params()
         )
 
-    def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False) -> Self:
+    def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False, verbose: int = 0) -> Self:
         r"""Train the anomaly detector to be able to get the anomaly score for each data point
 
         :param X: Vectors in data space.
@@ -323,8 +328,12 @@ class IFAnomalyDetector(AnomalyDetector):
 
         rand_st = check_random_state(self.random_state)
 
-        iso_forest = IsolationForest(n_estimators=self.n_trees, max_samples=self.max_features, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=rand_st, warm_start=warm_start)
-        iso_forest.fit(np.array(X))
+        if y is None:
+            iso_forest = IsolationForest(n_estimators=self.n_trees, max_samples=self.max_features, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=rand_st, warm_start=warm_start)
+            iso_forest.fit(np.array(X))
+        else:
+            iso_forest = SupervisedIsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, max_depth=self.max_depth, random_state=self.random_state)
+            iso_forest.fit(X, y, verbose=verbose)
 
         self._forest = iso_forest
         self.score_05_ = .5
