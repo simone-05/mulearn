@@ -1,23 +1,23 @@
-
-"""This module implements the anomaly detectors used in mulearn.
+"""This module defines the base anomaly detector used in mulearn.
 """
 
 import logging
-from typing import Literal, Self, Callable
+from typing import Callable, Literal, Self
 
 import numpy as np
-from numpy.typing import NDArray, ArrayLike
 from numpy.random import RandomState
+from numpy.typing import NDArray, ArrayLike
 from sklearn.base import BaseEstimator
-from sklearn.dummy import check_random_state
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
-from sklearn.exceptions import NotFittedError
-from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
+from sklearn.dummy import check_random_state
+from sklearn.utils.validation import check_X_y, check_array
 
 import mulearn.kernel as kernel
 from mulearn.optimization import Solver, GurobiSolver
-from mulearn.supervised_detectors import SupervisedIsolationForest
+from mulearn.anomaly_detectors.isolation_forest import SupervisedIsolationForest
+from mulearn.anomaly_detectors.support_vector_machine import SupportVectorMachine
+
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,8 @@ class SVMAnomalyDetector(AnomalyDetector):
     def __init__(self,
                  c: float = 1,
                  k: kernel.Kernel = kernel.GaussianKernel(),
-                 solver: Solver = GurobiSolver()):
+                 solver: Solver = GurobiSolver()
+                 ) -> None:
         """Create an instance of :class:`SVMAnomalyDetector`.
 
         :param c: Trade-off constant, defaults to 1.
@@ -140,17 +141,10 @@ class SVMAnomalyDetector(AnomalyDetector):
 
     def __eq__(self, other):
         """Check equality w.r.t. other objects."""
-        equal = (
-            type(self) is type(other) and
+        return (
+            type(self) == type(other) and
             self.get_params() == other.get_params()
         )
-        isfitted_self = hasattr(self, 'chis_')
-        isfitted_other = hasattr(other, 'chis_')
-        if isfitted_self and isfitted_other:
-            return equal and (self.chis_ == other.chis_)
-        elif isfitted_self != isfitted_other:
-            return False
-        return equal
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False) -> Self:
         r"""Train the anomaly detector to be able to get the anomaly score for each data point
@@ -169,40 +163,10 @@ class SVMAnomalyDetector(AnomalyDetector):
         :returns: self -- the trained model.
         """
 
-        self._X = X.copy()
-
         X, y = super()._check_X_y(X, y)
 
-        if y is None:
-            y = np.ones(len(X))
-
-        if warm_start:
-            check_is_fitted(self, ['chis_'])
-            if self.chis_ is None:
-                raise NotFittedError('chis variable are set to None')
-            self.solver.initial_values = self.chis_
-
-        if type(self.k) is kernel.PrecomputedKernel:
-            idx = X.flatten()
-            self._gram = self.k.kernel_computations[idx][:, idx]
-        else:
-            self._gram = np.array([self.k.compute(x1, X) for x1 in X])
-
-        self.chis_: ArrayLike = self.solver.solve(X, y, self.c, self._gram)
-
-        self.fixed_term_ = np.array(self.chis_).dot(self._gram.dot(self.chis_))
-
-        chi_SV_index = [i for i, (chi, mu) in enumerate(zip(self.chis_, y))
-                        if -self.c * (1 - mu) < chi < self.c * mu]
-        chi_sq_radius = list(self.score_samples(X[chi_SV_index]))
-
-        if len(chi_sq_radius) == 0:
-            self.chis_ = None
-            logger.warning('No support vectors found')
-            return self
-
-        self.squared_radius_ = np.mean(chi_sq_radius)
-        self.score_05_ = self.squared_radius_
+        svm = SupportVectorMachine(c=self.c, k=self.k, solver=self.solver)
+        self._svm, self.score_05_ = svm.fit(X, y, warm_start=warm_start)
 
         return self
 
@@ -214,12 +178,7 @@ class SVMAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: array with the score for each vector of data
         """
-        X = np.array(X)
-        t1 = self.k.compute(X, X)
-        t2 = np.array([self.k.compute(x_i, X)
-                        for x_i in self._X]).transpose().dot(self.chis_)
-        ret = t1 -2 * t2 + self.fixed_term_
-        return ret
+        return self._svm.score_samples(X)
 
     def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -232,7 +191,7 @@ class SVMAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- of anomaly scores, between 0 and 1.
         """
-        return self.score_samples(X)
+        return self._svm.score_samples(X)
 
     def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -242,7 +201,7 @@ class SVMAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
         """
-        return self.squared_radius_ - self.score_samples(X)
+        return self._svm.decision_function(X)
 
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
@@ -252,8 +211,7 @@ class SVMAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length.
         :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
         """
-        predictions = [1 if value>=0 else -1 for value in self.decision_function(X)]
-        return np.array(predictions)
+        return self._svm.predict(X)
 
 
 class IFAnomalyDetector(AnomalyDetector):
@@ -265,7 +223,7 @@ class IFAnomalyDetector(AnomalyDetector):
                  bootstrap: bool = False,
                  max_depth: int = 100,
                  n_jobs: int | None = -1,
-                 random_state: int | RandomState | None = None):
+                 random_state: int | None = None) -> None:
         """Create an instance of :class:`IFAnomalyDetector`.
 
         :param n_trees: number of trees in the forest, defaults to 100.
@@ -296,12 +254,11 @@ class IFAnomalyDetector(AnomalyDetector):
         self.random_state = random_state
 
     def __repr__(self, **kwargs):
-        return f'IFAnomalyDetector(trees={self.n_trees}, max_samples={self.max_samples}, contamination={self.contamination}, max_features={self.max_features}, bootstrap={self.bootstrap}, n_jobs={self.n_jobs})'
+        return f'IFAnomalyDetector(trees={self.n_trees}, max_samples={self.max_samples}, max_features={self.max_features})'
 
     def __eq__(self, other):
-        if type(self) is not type(other):
-            return False
         return (
+            type(self) == type(other) and
             isinstance(self.random_state, int) and
             isinstance(other.random_state, int) and
             self.get_params() == other.get_params()
@@ -326,13 +283,11 @@ class IFAnomalyDetector(AnomalyDetector):
 
         X, y = super()._check_X_y(X, y)
 
-        rand_st = check_random_state(self.random_state)
-
         if y is None:
-            iso_forest = IsolationForest(n_estimators=self.n_trees, max_samples=self.max_features, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=rand_st, warm_start=warm_start)
+            iso_forest = IsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=self.random_state, warm_start=warm_start)
             iso_forest.fit(np.array(X))
         else:
-            iso_forest = SupervisedIsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, max_depth=self.max_depth, random_state=self.random_state)
+            iso_forest = SupervisedIsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, max_features=self.max_features, max_depth=self.max_depth, random_state=self.random_state)
             iso_forest.fit(X, y, verbose=verbose)
 
         self._forest = iso_forest
@@ -397,7 +352,7 @@ class LOFAnomalyDetector(AnomalyDetector):
                  metric_params: dict | None = None,
                  contamination: Literal['auto'] | float = 'auto',
                  novelty: bool = True,
-                 n_jobs: int | None = -1):
+                 n_jobs: int | None = -1) -> None:
         """Create an instance of :class:`LOFFuzzyInductor`.
 
         :param n_neighbors: the number of neighbors to consider when calculating local density, defaults to `20`.
@@ -434,9 +389,10 @@ class LOFAnomalyDetector(AnomalyDetector):
         return f'LOFFuzzyInductor(n_neighbors={self.n_neighbors}, algorithm={self.algorithm}, leaf_size={self.leaf_size}, metric={self.metric}, p={self.p}, metric_params={self.metric_params}, contamination={self.contamination}, novelty={self.novelty}, n_jobs={self.n_jobs})'
 
     def __eq__(self, other):
-        if type(self) is not type(other):
-            return False
-        return self.get_params() == other.get_params()
+        return (
+            type(self) == type(other) and
+            self.get_params() == other.get_params()
+        )
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None) -> Self:
         r"""Train the anomaly detector to be able to get the anomaly score for each data point

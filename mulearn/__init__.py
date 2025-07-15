@@ -13,7 +13,10 @@ from sklearn.exceptions import FitFailedWarning
 from sklearn.utils.validation import check_X_y, check_array
 
 import mulearn.fuzzifier as fuzzifier
-import mulearn.anomaly_detector as anomaly_detector
+# import mulearn.anomaly_detectors as anomaly_detectors
+# from . import anomaly_detectors
+from mulearn.anomaly_detectors import AnomalyDetector
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +29,15 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
 
     def __init__(self,
                  fuzzifier: fuzzifier.Fuzzifier = fuzzifier.ExponentialFuzzifier(),
-                 anomaly_detector: anomaly_detector.AnomalyDetector = anomaly_detector.SVMAnomalyDetector(),
-                 keep_original_data: bool = False) -> None :
+                 anomaly_detector: AnomalyDetector = anomaly_detectors.SVMAnomalyDetector(),
+                 keep_original_data: bool = False
+                 ) -> None :
         r"""Create an instance of :class:`FuzzyInductor`.
 
         :param fuzzifier: fuzzifier mapping distance values to membership degrees, defaults to `ExponentialFuzzifier()`.
         :type fuzzifier: :class:`mulearn.fuzzifier.Fuzzifier`
         :param anomaly_detector: the anomaly detector implementation to use, defaults to `SVMAnomalyDetector()`.
-        :type anomaly_detector: :class:mulearn.anomaly_detector.AnomalyDetector`
+        :type anomaly_detector: :class:mulearn.anomaly_detectors.AnomalyDetector`
         :param save_data: specifies if we want the model to save the original data to visualize the profile of the membership later, defaults to `False`.
         :type save_data: `bool`
         """
