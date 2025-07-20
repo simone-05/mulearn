@@ -13,8 +13,7 @@ from sklearn.exceptions import FitFailedWarning
 from sklearn.utils.validation import check_X_y, check_array
 
 import mulearn.fuzzifier as fuzzifier
-# import mulearn.anomaly_detectors as anomaly_detectors
-# from . import anomaly_detectors
+from mulearn import anomaly_detectors
 from mulearn.anomaly_detectors import AnomalyDetector
 
 

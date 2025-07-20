@@ -287,7 +287,7 @@ class IFAnomalyDetector(AnomalyDetector):
             iso_forest = IsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=self.random_state, warm_start=warm_start)
             iso_forest.fit(np.array(X))
         else:
-            iso_forest = SupervisedIsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, max_features=self.max_features, max_depth=self.max_depth, random_state=self.random_state)
+            iso_forest = SupervisedIsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, max_depth=self.max_depth, random_state=self.random_state)
             iso_forest.fit(X, y, verbose=verbose)
 
         self._forest = iso_forest

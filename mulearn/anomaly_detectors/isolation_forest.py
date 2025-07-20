@@ -8,6 +8,10 @@ from functools import partial
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 
 
+DEFAULT_MAX_SAMPLES = 256           # default number of samples for each tree, taken from sklearn's IsolationForest max_samples
+DEFAULT_OFFSET = - 0.5              # used in decision_function, related to contamination value, used when contamination = auto
+MEMBERSHIP_ANOMALY_THRESHOLD = 0.2   # used for decision_function value computation. A memberhsip value less or equal than this, is considered anomaly
+
 class TreeNode:
     def __init__(self,
                  left: Self | None = None,
@@ -36,12 +40,8 @@ class TreeNode:
 
     def get_child(self, side: Literal["left", "right"]) -> Self | None:
         if side == "left":
-        #     if self._left is None:
-        #         raise Exception("Node has no left child")
             return self._left
         else:
-            # if self._right is None:
-        #         raise Exception("Node has no right child")
             return self._right
 
     def print_subTree(self, side: str = "", depth: int = 0) -> None:
@@ -60,6 +60,11 @@ class IsolationTree:
         self._random_state = random_state
 
     def _check_fitted(self) -> bool:
+        """Checks if the tree has been fit yet
+
+        :return: True if fitted, False otherwise.
+        :rtype: bool
+        """
         if getattr(self, "_num_nodes", 0) == 1:
             warnings.warn("Tree has only the root node, try feeding more data", UserWarning)
         return (
@@ -67,10 +72,31 @@ class IsolationTree:
             getattr(self, "_num_nodes", 0) > 0
         )
 
+    def _get_og_feature_index(self, sampled_feature_index: int) -> int:
+        """Return the feature index of the original dataset, given the feature index from the sampled features
+
+        :param sampled_feature_index: The feature index after the sampling on the features for the current tree
+        :type sampled_feature_index: int
+        :raises RuntimeError: If the original feature index array has not been set yet
+        :return: The original feature index for the given sampled index
+        :rtype: int
+        """
+        if self._og_features_indices is None:
+            raise RuntimeError("Original feature index not yet set")
+        return self._og_features_indices[sampled_feature_index]
+
     def _build_splitting_function(self, X: NDArray, y: NDArray, verbose: int = 0) -> tuple[Callable[[NDArray[np.float64 | np.int_] | float | int], NDArray[np.float64]], bool]:
         """Is the inverse function of a cumulative distribution function.
-        First return value is the inverse callable function, second is True if the cumulative is constant and thus returning the maximum value"""
 
+        :param X: The array of values in feature space
+        :type X: NDArray
+        :param y: The array of membership values, in interval [0,1]
+        :type y: NDArray
+        :param verbose: To print more informations, either 0, 1 or 2, defaults to 0
+        :type verbose: int, optional
+        :return: The inverse callable function, that accepts the y as paramter, and returns the corresponding feature value. And also a boolean, if True then the cumulative function is constant, and the inverse function will always return the maximum feature value.
+        :rtype: tuple[Callable[[NDArray[np.float64 | np.int_] | float | int], NDArray[np.float64]], bool]
+        """
         # X, y = check_X_y(X.reshape(1,-1), y)
 
         # Calculating the intervals in feature space:
@@ -78,17 +104,17 @@ class IsolationTree:
         starts = np.concatenate(([X[0]], midpoints))
         ends = np.concatenate((midpoints, [X[-1]]))
         x_neighborhoods = np.stack((starts, ends), axis=1) # [[start,end], ...]
-        y = 1 - y               # ones complement for y
+        complemented_y = 1 - y               # ones complement for y
         # Calculating areas:
         bases = x_neighborhoods[:, 1] - x_neighborhoods[:, 0]
-        areas = bases * y       # base * height
-        # Beta factor is so that: original_area = normalized_area / beta
+        areas = bases * complemented_y       # base * height
+
         if areas.sum() == 0:
             if verbose >= 2:
-                print(f"The cumulative function obtained is constant. Returning the value of the right extreme: {X[-1]}")
-            def return_max_point(x):
-                return np.full_like(x, X[-1])
-            return return_max_point, True
+                print("The cumulative function obtained is constant. Setting areas to all same value")
+            areas = np.ones(len(areas))
+
+        # Beta factor is so that: original_area = normalized_area / beta
         self.beta_ = 1 / areas.sum()
         normalized_areas = areas / areas.sum()    # normalize areas
         # Building the cumulative:
@@ -124,9 +150,22 @@ class IsolationTree:
         return inv_big_f, False
 
     def _build_subTree(self, start: int, end: int, depth: int = 0, verbose: int = 0) -> TreeNode | None:
+        """Recursively tree fitting function
+
+        :param start: The starting index of the X array
+        :type start: int
+        :param end: The ending index (non inclusive) of the X array
+        :type end: int
+        :param depth: Current tree depth. 0 for the root node, defaults to 0
+        :type depth: int, optional
+        :param verbose: If to print informations, values can either be 0, 1 or 2, defaults to 0
+        :type verbose: int, optional
+        :return: A TreeNode
+        :rtype: TreeNode | None
+        """
         # Increase tree depth and nodes number
         if verbose == 2:
-            print("Indexes interval start-end:",start,end)
+            print("Indices interval start-end:",start,end)
         self._depth = max(self._depth, depth)
         self._num_nodes += 1
 
@@ -152,7 +191,7 @@ class IsolationTree:
                     print("Single node left, with data=", ord_feat_X[start])
                 else:
                     print("Returning node because end<=start")
-            return TreeNode(feature_index=split_feature_index, value=ord_feat_X[start] if end > start else None, depth=depth)
+            return TreeNode(feature_index=self._get_og_feature_index(split_feature_index), value=ord_feat_X[start] if end > start else None, depth=depth)
 
         min_value = ord_feat_X[start]
         max_value = ord_feat_X[end-1]
@@ -162,14 +201,14 @@ class IsolationTree:
         if min_value == max_value:
             if verbose == 2:
                 print("Returning node because minval == maxval, with data=",min_value)
-            return TreeNode(feature_index=split_feature_index, value=min_value, depth=depth)
+            return TreeNode(feature_index=self._get_og_feature_index(split_feature_index), value=min_value, depth=depth)
 
         # Build the splitting function on the interval
         splitting_func, constant_flag = self._build_splitting_function(ord_feat_X[start:end], ord_y[start:end], verbose=verbose)
         if constant_flag:
             if verbose == 2:
                 print("Returning lowest value node because of constant cumulative function. Data=", min_value)
-            return TreeNode(feature_index=split_feature_index, value=min_value, depth=depth)
+            return TreeNode(feature_index=self._get_og_feature_index(split_feature_index), value=min_value, depth=depth)
         # Get split feature value and index
         split_value = splitting_func(self._random_number_generator.random())
         split_index = np.searchsorted(ord_feat_X[start:end], split_value, side='right') + start
@@ -183,11 +222,28 @@ class IsolationTree:
         left_child = self._build_subTree(start, split_index, depth + 1, verbose=verbose) if split_index > start else None
         right_child = self._build_subTree(split_index, end, depth + 1, verbose=verbose) if split_index < end else None
 
-        return TreeNode(feature_index=split_feature_index, value=split_value, left=left_child, right=right_child, depth=depth)
+        return TreeNode(feature_index=self._get_og_feature_index(split_feature_index), value=split_value, left=left_child, right=right_child, depth=depth)
 
-    def fit(self, X: ArrayLike, y: ArrayLike, verbose: int = 0) -> Self:
+    def fit(self, X: ArrayLike, y: ArrayLike, og_features_indices: NDArray[np.int_] | None = None, verbose: int = 0) -> Self:
+        """Fits the tree
+
+        :param X: Array of elements to fit in the tree
+        :type X: ArrayLike
+        :param y: Array of membership values, of same size of X
+        :type y: ArrayLike
+        :param og_features_indices: Array of the sampled feature indices relative to the original/full array. If not set, then is assumed to use all of the features, defaults to None
+        :type og_features_indices: NDArray[np.int_]
+        :param verbose: If to print more information, can either be 0, 1 or 2, defaults to 0
+        :type verbose: int, optional
+        :return: The fitted IsolationTree
+        :rtype: Self
+        """
         self._X = X.copy()
         self._y = y.copy()
+        if og_features_indices is None:
+            self._og_features_indices = np.array(range(X.shape[1]))
+        else:
+            self._og_features_indices = og_features_indices
         self._depth = 0
         self._num_nodes = 0
         self._random_number_generator = np.random.default_rng(self._random_state)
@@ -195,6 +251,16 @@ class IsolationTree:
         return self
 
     def get_node_depth(self, target_data) -> int:
+        """Returns the depth of the value of the parameter.
+        Starting from the root, for each node of the tree we continue left is the `target_data` value is less or equal than the node, else we continue right. Until we find the node or we reach a leaf.
+
+        :param target_data: The value to search for
+        :type target_data: Any
+        :raises TypeError: If the paramter `target_data` is multidimensional
+        :raises RuntimeError: If the tree is not fitted
+        :return: The depth of the found `target_data` value
+        :rtype: int
+        """
         target_data = np.asarray(target_data)
         if target_data.ndim > 1:
             raise TypeError(f"target_data must have dimension=1, but it has dimension={target_data.ndim}")
@@ -206,20 +272,32 @@ class IsolationTree:
             cur_data = cur_node.get_value()
             cur_depth = cur_node.get_depth()
             if target_data[cur_feat_idx] > cur_data:
-                    cur_node = cur_node.get_child("right")
+                cur_node = cur_node.get_child("right")
             else:
-                    cur_node = cur_node.get_child("left")
+                cur_node = cur_node.get_child("left")
             if cur_node is None:
                 break
         return cur_depth
 
     def get_max_depth(self) -> int:
+        """Returns the max depth of the tree
+
+        :return: The max depth
+        :rtype: int
+        """
         return self._depth
 
     def get_num_nodes(self) -> int:
+        """Returns the number of nodes in the tree, root inclusive.
+
+        :return: Number of nodes
+        :rtype: int
+        """
         return self._num_nodes
 
     def print_tree(self) -> None:
+        """Prints the tree to stdout
+        """
         if self._root is None:
             print("Empty tree")
             return
@@ -229,23 +307,43 @@ class SupervisedIsolationForest:
     def __init__(self,
                  n_estimators: int = 100,
                  max_samples: Literal["auto"] | int | float = 256,
+                 contamination: Literal["auto"] | float = "auto",
                  max_features: int | float = 1.0,
-                 max_depth: int = 100,
+                 max_depth: int | None = None,
                  random_state: int | None = None
                  ) -> None:
         self._n_estimators = n_estimators
         self._max_depth = max_depth
         self._max_samples = max_samples
+        self._contamination = contamination
         self._max_features = max_features
         self._random_state = random_state
 
-    def _check_fitted(self):
+    def _check_fitted(self) -> bool:
+        """Checks if the tree has been fit
+
+        :return: If the tree is fitted or not
+        :rtype: bool
+        """
         return (
             getattr(self, "forest_", None) is not None and
             len(self.forest_) > 0
         )
 
     def fit(self, X: ArrayLike, y: ArrayLike, verbose: int = 0) -> Self:
+        """Fits the isolation forest to the given X array of data
+
+        :param X: The array of data to fit
+        :type X: ArrayLike
+        :param y: The array of membership values, in interval [0,1] with same length of X
+        :type y: ArrayLike
+        :param verbose: If to print more informations, can be 0 or 1, defaults to 0
+        :type verbose: int, optional
+        :raises ValueError: Value checks on the given constructor's paramters for the forest
+        :raises TypeError: Type checks on the given constructor's paramters for the forest
+        :return: The fitted forest
+        :rtype: Self
+        """
 
         X, y = check_X_y(X, y)
         X, y = np.asarray(X), np.asarray(y)
@@ -256,17 +354,25 @@ class SupervisedIsolationForest:
 
         # 'max_samples' parameter check and setting:
         if self._max_samples == "auto":
-            max_samples = 256
+            max_samples = DEFAULT_MAX_SAMPLES
         elif type(self._max_samples) == float:
             maxs = self._max_samples
             if maxs > 1. or maxs < .0:
                 raise ValueError(f"if max_samples is a float, it should be between 0.0 and 1.0. Given value: {maxs}")
-            max_samples = dataset_size * maxs
+            max_samples = int(dataset_size * maxs)
         elif type(self._max_samples) == int:
             max_samples = self._max_samples
         else:
-            raise ValueError(f"max_samples should be either a 'int', 'float' or string value \"auto\", given: {type(self._max_samples)}")
+            raise TypeError(f"max_samples parameter should be either a 'int', 'float' or the string value: \"auto\", given: {type(self._max_samples)}")
         max_samples = min(max_samples, dataset_size)
+
+        # 'contamination' parameter check:
+        # The parameter 'contamination' will be used in 'decision_function' function
+        if type(self._contamination) == float:
+            if self._contamination > .5 or self._contamination <= .0:
+                raise ValueError(f"if contamination is a float, it should be between 0.0 excluded and 0.5. Given value: {self._contamination}")
+        elif self._contamination != "auto":
+            raise TypeError(f"contamination parameter should be either a 'float' or the string value: \"auto\", given: {type(self._contamination)}")
 
         # 'max_features' parameter check and setting:
         if type(self._max_features) == int:
@@ -277,8 +383,20 @@ class SupervisedIsolationForest:
                 raise ValueError(f"if max_features is a float, it should be between 0.0 and 1.0. Given value: {maxf}")
             max_features = int(dataset_features_number * maxf) or 1
         else:
-            raise ValueError(f"max_features should be either a 'int' or 'float', given: {type(self._max_features)}")
+            raise TypeError(f"max_features parameter should be either a 'int' or 'float', given: {type(self._max_features)}")
         max_features = min(max_features, dataset_features_number)
+
+        # 'max_depth' parameter check and setting:
+        if self._max_depth is None:
+            # According to sklearn Isolation Forest:
+            max_depth = math.ceil(math.log2(dataset_size))
+        elif type(self._max_depth) == int:
+            if self._max_depth < 1:
+                raise ValueError(f"max_depth parameter cannot be less than 1. Given value: {self._max_depth}")
+            else:
+                max_depth = self._max_depth
+        else:
+            raise TypeError(f"max_depth parameter should be either 'None' or 'int', given: {type(self._max_depth)}")
 
         self._random_number_generator = np.random.default_rng(self._random_state)
 
@@ -296,26 +414,18 @@ class SupervisedIsolationForest:
 
         # Fitting trees:
         for _ in trees_iter:
-
-            # # Selecting random feature from X:
-            # selected_feature_index = self._random_number_generator.integers(0, num_features)
-            # self._trees_feature_indexes.append(selected_feature_index)
-            # indexer = [slice(None)] * X.ndim
-            # indexer[1] = selected_feature_index
-            # single_feature_X = X[tuple(indexer)]
-
-            # # Subsampling from (X,y):
+            # Subsampling from (X,y):
             samples_indeces = np.sort(self._random_number_generator.permutation(dataset_size)[:max_samples])
             sampled_X = X[samples_indeces]
             sampled_y = y[samples_indeces]
 
-            # # Feature setting for the samples:
+            # Feature setting for the samples:
             sampled_features = np.sort(self._random_number_generator.choice(dataset_features_number, size=max_features, replace=False))
-            sampled_X[:,sampled_features]
+            sampled_X = sampled_X[:,sampled_features]
 
             # Training a tree:
-            tree = IsolationTree(max_depth=self._max_depth)
-            tree.fit(sampled_X, sampled_y, verbose=verbose-1)
+            tree = IsolationTree(max_depth=max_depth)
+            tree.fit(sampled_X, sampled_y, sampled_features, verbose=verbose-1)
             self.forest_.append(tree)
 
         # Saving 'c(n)' term to later calculate the score for any data point:
@@ -327,41 +437,89 @@ class SupervisedIsolationForest:
 
         return self
 
-    def score_samples(self, X: ArrayLike, verbose: bool = False) -> NDArray[np.float64]:
-        """ Higher -> inlier. Lower -> outlier """
-        if verbose:
+    def anomaly_score(self, X: ArrayLike, verbose: int = 0) -> NDArray[np.float64]:
+        """Indicates how much a point is anomalous. Is calculated from the IsolationForest formula of the original paper.
+
+        :param X: The samples to compute the scores for
+        :type X: ArrayLike
+        :return: The array of scores with values in interval [0,1]
+        :rtype: NDArray[np.float64]
+        """
+        if not self._check_fitted():
+            raise RuntimeError("Forest not fitted")
+        if verbose >= 1 :
             import time
             start = time.time()
+        X = np.asarray(X)
+        if X.ndim == 1: X = X.reshape(1, -1)
         res = []
         for sample in X:
             avg_depth = 0
-            for i, tree in enumerate(self.forest_):
-                # Selecting tree's feature:
-                # selected_feature_index = self._trees_feature_indexes[i]
-                # indexer = [slice(None)]
-                # indexer[0] = selected_feature_index
-                # single_feature_sample = sample[tuple(indexer)]
+            for tree in self.forest_:
                 avg_depth += tree.get_node_depth(sample)
             avg_depth = avg_depth/self._n_estimators
-            # Original sklearn's IsolationForest formula:
-            score = 2 ** (- avg_depth / self.c_of_n_)
-            # For conformity of other anomaly detectors i complement the score:
-            res.append(1- score)
-        if verbose:
+            # Original sklearn's IsolationForest anomaly score formula:
+            anomaly_score = 2 ** (- avg_depth / self.c_of_n_)
+            res.append(anomaly_score)
+        if verbose >= 1:
             print(time.time()-start,"seconds")
         return np.asarray(res)
 
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
-        """ Shifts the score_samples to be between -1 and 1. The lower the more abnormal """
-        return self.score_samples(X) - .5
+    def score_samples(self, X: ArrayLike, verbose: int = 0) -> NDArray[np.float64]:
+        """Gives a score for each sample in X. Higher is more inlier, lower is more outlier. Is the opposite of the anomaly score.
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
-        anomaly_scores = -self.score_samples(X)
-        min_score = np.min(anomaly_scores)
-        max_score = np.max(anomaly_scores)
-        distances = (anomaly_scores - min_score) / (max_score - min_score)
-        return distances
+        :param X: The samples to compute the scores for
+        :type X: ArrayLike
+        :param verbose: If to print more informations, can be 0 or 1, defaults to False
+        :type verbose: bool, optional
+        :return: The array of scores with values in interval [0,1]
+        :rtype: NDArray[np.float64]
+        """
+        if not self._check_fitted():
+            raise RuntimeError("Forest not fitted")
+        if verbose >= 1:
+            import time
+            start = time.time()
+        X = np.asarray(X)
+        # As stated in sklearn 'score_samples is the opposite of the anomaly score':
+        res = self.anomaly_score(X) * -1
+        if verbose >= 1:
+            print(time.time()-start,"seconds")
+        return np.asarray(res)
+
+    def decision_function(self, X: ArrayLike, verbose: int = 0) -> NDArray[np.float64]:
+        """Shifts the score_samples to be between -1 and 1. The lower the more abnormal
+
+        :param X: The samples to calculate the values for
+        :type X: ArrayLike
+        :return: Array of floats, same length of X, in interval [-1,1]. Dimension 1
+        :rtype: NDArray[np.float64]
+        """
+        if not self._check_fitted():
+            raise RuntimeError("Forest not fitted")
+        if verbose >= 1:
+            import time
+            start = time.time()
+        X = np.asarray(X)
+        # Type and value checks on contamination parameter already done during fit() function
+        if not hasattr(self, "_offset"):    # we avoid calculating it if we did already. It saves a lot of time
+            if self._contamination == "auto":
+                # Default behaviour of sklearn IsolationForest:
+                # self._offset = DEFAULT_OFFSET   #DEFAULT_OFFSET = - 0.5
+                # A different, custom, implementation to infer the contamination value, using membership informations:
+                anomalies_number = np.sum(self._y <= MEMBERSHIP_ANOMALY_THRESHOLD) #MEMBERSHIP... = 0.2
+                contamination = anomalies_number / len(self._X)
+            else:       # if self._contamination is a float
+                contamination = self._contamination
+            # Subtracting from the scores a value so that we have the decided percentage of anomalies
+            sorted_scores = np.sort(self.score_samples(self._X))
+            anomalies_number = int(len(self._X) * contamination)
+            self._offset = sorted_scores[anomalies_number] + 1e-10  # added a small number to avoid having 0 values
+        if verbose >= 1:
+            print(time.time()-start,"seconds")
+        return self.score_samples(X) - self._offset
 
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:
-        """ Array of -1 if anomalous, +1 if non-anomaly """
-        return np.where(self.score_samples(X) > 0, 1, -1)
+        """Array of -1 if anomalous, +1 if non-anomaly """
+        X = np.asarray(X)
+        return np.where(self.decision_function(X) > 0, 1, -1)
