@@ -1,4 +1,4 @@
-__version__ = '1.1.3'
+__version__ = "1.1.3"
 
 
 import logging
@@ -19,11 +19,11 @@ from mulearn.anomaly_detectors import AnomalyDetector
 
 logger = logging.getLogger(__name__)
 
-warnings.filterwarnings('ignore', category=OptimizeWarning)
-warnings.filterwarnings('ignore', category=FitFailedWarning)
+warnings.filterwarnings("ignore", category=OptimizeWarning)
+warnings.filterwarnings("ignore", category=FitFailedWarning)
 
 
-class FuzzyInductor(BaseEstimator, RegressorMixin):
+class FuzzyInductor(RegressorMixin, BaseEstimator):
     """Base class for FuzzyInductor."""
 
     def __init__(self,
@@ -73,7 +73,7 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
             y = np.ones(len(X))
 
         self.fuzzifier.fit(
-            self.anomaly_detector.anomaly_score(X),
+            self.anomaly_detector.predict(X),
             y,
             self.anomaly_detector.score_05_
         )
@@ -112,8 +112,8 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
             return mus
         else:
             if alpha < 0 or alpha > 1:
-                raise ValueError('alpha cut value should belong to [0, 1]'
-                                 f' (provided {alpha})')
+                raise ValueError("alpha cut value should belong to [0, 1]"
+                                 f" (provided {alpha})")
             return np.array([1 if mu >= alpha else 0 for mu in mus])
 
     def score(self, X: ArrayLike, y: ArrayLike, **kwargs) -> np.float64:
@@ -136,5 +136,5 @@ class FuzzyInductor(BaseEstimator, RegressorMixin):
 
     def get_profile(self) -> list:
         if not self.keep_original_data:
-            raise RuntimeError('Cannot execute the method `get_profile` without specifying `keep_original_data=True` in the constructor\'s parameters')
+            raise RuntimeError("Cannot execute the method `get_profile` without specifying `keep_original_data=True` in the constructor's parameters")
         return self.fuzzifier.get_profile(self.anomaly_detector.anomaly_score(self.X_))

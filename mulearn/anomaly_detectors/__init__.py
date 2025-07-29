@@ -40,7 +40,7 @@ class AnomalyDetector(BaseEstimator):
         :returns: self -- the trained model.
         """
         raise NotImplementedError(
-            'The base class does not implement the `fit` method')
+            "The base class does not implement the `fit` method")
 
     def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -51,7 +51,7 @@ class AnomalyDetector(BaseEstimator):
         :returns: array with the score for each vector of data
         """
         raise NotImplementedError(
-            'The base class does not implement the `score_samples` method')
+            "The base class does not implement the `score_samples` method")
 
     def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -64,7 +64,7 @@ class AnomalyDetector(BaseEstimator):
         :returns: np.array -- of anomaly scores, between 0 and 1.
         """
         raise NotImplementedError(
-            'The base class does not implement the `anomaly_score` method')
+            "The base class does not implement the `anomaly_score` method")
 
     def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -75,7 +75,7 @@ class AnomalyDetector(BaseEstimator):
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
         """
         raise NotImplementedError(
-            'The base class does not implement the `decision_function` method')
+            "The base class does not implement the `decision_function` method")
 
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
@@ -86,7 +86,7 @@ class AnomalyDetector(BaseEstimator):
         :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
         """
         raise NotImplementedError(
-            'The base class does not implement the `predict` method')
+            "The base class does not implement the `predict` method")
 
     def _check_X_y(self, X: ArrayLike, y: ArrayLike | None) -> tuple[ArrayLike, ArrayLike|None]:
         """
@@ -99,7 +99,7 @@ class AnomalyDetector(BaseEstimator):
             X, y = check_X_y(X, y)
             for e in y:
                 if e < 0 or e > 1:
-                    raise ValueError('`y` values should belong to [0, 1]')
+                    raise ValueError("`y` values should belong to [0, 1]")
 
         return X, y
 
@@ -136,14 +136,21 @@ class SVMAnomalyDetector(AnomalyDetector):
         self.solver = solver
 
     def __repr__(self, **kwargs):
-        return f'SVMAnomalyDetector(c={self.c}, k={self.k}, ' \
-               f'solver={self.solver})'
+        return f"SVMAnomalyDetector(c={self.c}, k={self.k}, " \
+               f"solver={self.solver})"
 
     def __eq__(self, other):
         """Check equality w.r.t. other objects."""
         return (
             type(self) == type(other) and
             self.get_params() == other.get_params()
+        )
+
+    def __sklearn_is_fitted__(self) -> bool:
+        """This method is called by `check_is_fitted(self)`
+        """
+        return (
+            getattr(self, "estimator_", None) is not None
         )
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False) -> Self:
@@ -165,8 +172,9 @@ class SVMAnomalyDetector(AnomalyDetector):
 
         X, y = super()._check_X_y(X, y)
 
-        svm = SupportVectorMachine(c=self.c, k=self.k, solver=self.solver)
-        self._svm, self.score_05_ = svm.fit(X, y, warm_start=warm_start)
+        self._estimator = SupportVectorMachine(c=self.c, k=self.k, solver=self.solver)
+        self._estimator = self._estimator.fit(X, y, warm_start=warm_start)
+        self.score_05_ = self._estimator.squared_radius_
 
         return self
 
@@ -178,7 +186,7 @@ class SVMAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: array with the score for each vector of data
         """
-        return self._svm.score_samples(X)
+        return self._estimator.score_samples(X)
 
     def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -191,7 +199,7 @@ class SVMAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- of anomaly scores, between 0 and 1.
         """
-        return self._svm.score_samples(X)
+        return self._estimator.anomaly_score(X)
 
     def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -201,7 +209,7 @@ class SVMAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
         """
-        return self._svm.decision_function(X)
+        return self._estimator.decision_function(X)
 
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
@@ -211,19 +219,20 @@ class SVMAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length.
         :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
         """
-        return self._svm.predict(X)
+        return self._estimator.predict(X)
 
 
 class IFAnomalyDetector(AnomalyDetector):
     def __init__(self,
-                 n_trees: int = 100,
-                 max_samples: Literal['auto'] | int | float = 'auto',
-                 contamination: Literal['auto'] | float = 'auto',
+                 n_trees: int | None = None,
+                 max_samples: Literal["auto"] | int | float = "auto",
+                 contamination: Literal["auto"] | float = "auto",
                  max_features: int | float = 1.0,
                  bootstrap: bool = False,
-                 max_depth: int = 100,
+                 max_depth: int | None = None,
                  n_jobs: int | None = -1,
-                 random_state: int | None = None) -> None:
+                 random_state: int | None = None
+                 ) -> None:
         """Create an instance of :class:`IFAnomalyDetector`.
 
         :param n_trees: number of trees in the forest, defaults to 100.
@@ -254,7 +263,7 @@ class IFAnomalyDetector(AnomalyDetector):
         self.random_state = random_state
 
     def __repr__(self, **kwargs):
-        return f'IFAnomalyDetector(trees={self.n_trees}, max_samples={self.max_samples}, max_features={self.max_features})'
+        return f"IFAnomalyDetector(trees={self.n_trees}, max_samples={self.max_samples}, max_features={self.max_features})"
 
     def __eq__(self, other):
         return (
@@ -262,6 +271,13 @@ class IFAnomalyDetector(AnomalyDetector):
             isinstance(self.random_state, int) and
             isinstance(other.random_state, int) and
             self.get_params() == other.get_params()
+        )
+
+    def __sklearn_is_fitted__(self) -> bool:
+        """This method is called by `check_is_fitted(self)`
+        """
+        return (
+            getattr(self, "estimator_", None) is not None
         )
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False, verbose: int = 0) -> Self:
@@ -284,14 +300,16 @@ class IFAnomalyDetector(AnomalyDetector):
         X, y = super()._check_X_y(X, y)
 
         if y is None:
-            iso_forest = IsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=self.random_state, warm_start=warm_start)
-            iso_forest.fit(np.array(X))
+            trees = self.n_trees or 100
+            self._estimator = IsolationForest(n_estimators=trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=self.random_state, warm_start=warm_start)
+            self._estimator.fit(X)
+            self.score_05_ = .5
         else:
-            iso_forest = SupervisedIsolationForest(n_estimators=self.n_trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, max_depth=self.max_depth, random_state=self.random_state)
-            iso_forest.fit(X, y, verbose=verbose)
-
-        self._forest = iso_forest
-        self.score_05_ = .5
+            trees = self.n_trees or 20
+            self._estimator = SupervisedIsolationForest(n_estimators=trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, max_depth=self.max_depth, random_state=self.random_state)
+            self._estimator.fit(X, y, verbose=verbose)
+            self._estimator.decision_function(X)    # estimator.offset is set when this function is called
+            self.score_05_ = -self._estimator.offset_
 
         return self
 
@@ -303,7 +321,7 @@ class IFAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: array with the score for each vector of data
         """
-        return self._forest.score_samples(X)
+        return self._estimator.score_samples(X)
 
     def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -315,7 +333,7 @@ class IFAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- of anomaly scores, between 0 and 1.
         """
-        anomaly_scores = -self._forest.score_samples(X)
+        anomaly_scores = -self._estimator.score_samples(X)
         min_score = np.min(anomaly_scores)
         max_score = np.max(anomaly_scores)
         distances = (anomaly_scores - min_score) / (max_score - min_score)
@@ -329,7 +347,7 @@ class IFAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
         """
-        return self._forest.decision_function(X)
+        return self._estimator.decision_function(X)
 
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
@@ -339,36 +357,37 @@ class IFAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length.
         :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
         """
-        return self._forest.predict(X)
+        return self._estimator.predict(X)
 
 
 class LOFAnomalyDetector(AnomalyDetector):
     def __init__(self,
                  n_neighbors: int = 20,
-                 algorithm: Literal['auto', 'ball_tree', 'kd_tree', 'brute']='auto',
+                 algorithm: Literal["auto", "ball_tree", "kd_tree", "brute"]="auto",
                  leaf_size: int = 30,
-                 metric: str | Callable = 'minkowski',
+                 metric: str | Callable = "minkowski",
                  p: int = 2,
                  metric_params: dict | None = None,
-                 contamination: Literal['auto'] | float = 'auto',
+                 contamination: Literal["auto"] | float = "auto",
                  novelty: bool = True,
-                 n_jobs: int | None = -1) -> None:
+                 n_jobs: int | None = -1
+                 ) -> None:
         """Create an instance of :class:`LOFFuzzyInductor`.
 
         :param n_neighbors: the number of neighbors to consider when calculating local density, defaults to `20`.
         :type n_neighbors: `int`
         :param algorithm: algorithm used to compute the nearest neighbors, defaults to `auto`.
-        :type algorithm: `Literal['auto', 'ball_tree', 'kd_tree', 'brute']`
+        :type algorithm: `Literal["auto", "ball_tree", "kd_tree", "brute"]`
         :param leaf_size: controls leaf size in tree-based algorithms BallTree or KDTree. This can affect the speed of the construction and query, as well as the memory required to store the tree. The optimal value depends on the nature of the problem, defaults to 30.
         :type leaf_size: `int`
-        :param metric: the distance metric to use, defaults to `'minkowski'` which results in the standard Euclidean distance when p = 2
+        :param metric: the distance metric to use, defaults to `"minkowski"` which results in the standard Euclidean distance when p = 2
         :type metric: `str` or `callable`
         :param p: parameter for the Minkowski metric from sklearn.metrics.pairwise_distances. When p = 1, this is equivalent to using manhattan_distance (l1), and euclidean_distance (l2) for p = 2. For arbitrary p, minkowski_distance (l_p) is used, defautls to 2.
         :type p: `float`
         :param metric_params: additional keyword arguments for the metric function, defaults to `None`
         :type metric_params: `dict`
         :param contamination: expeted ratio of outliers. When fitting this is used to define the threshold on the scores of the samples, defaults to `auto`.
-        :type contamination: `'auto'` or `float`
+        :type contamination: `"auto"` or `float`
         :param novelty: by default, LocalOutlierFactor is only meant to be used for outlier detection (novelty=False). Set novelty to True if you want to use LocalOutlierFactor for novelty detection. In this case be aware that you should only use predict, decision_function and score_samples on new unseen data and not on the training set; and note that the results obtained this way may differ from the standard LOF results, defaults to `True`
         :type novelty: `bool`
         :param n_jobs: number of parallel jobs/threads. If -1 uses all cores, defaults to `None`.
@@ -376,7 +395,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         """
 
         self.n_neighbors = n_neighbors
-        self.algorithm: Literal['auto', 'ball_tree', 'kd_tree', 'brute'] = algorithm
+        self.algorithm: Literal["auto", "ball_tree", "kd_tree", "brute"] = algorithm
         self.leaf_size = leaf_size
         self.metric = metric
         self.p = p
@@ -386,12 +405,19 @@ class LOFAnomalyDetector(AnomalyDetector):
         self.n_jobs = n_jobs
 
     def __repr__(self, **kwargs):
-        return f'LOFFuzzyInductor(n_neighbors={self.n_neighbors}, algorithm={self.algorithm}, leaf_size={self.leaf_size}, metric={self.metric}, p={self.p}, metric_params={self.metric_params}, contamination={self.contamination}, novelty={self.novelty}, n_jobs={self.n_jobs})'
+        return f"LOFFuzzyInductor(n_neighbors={self.n_neighbors}, algorithm={self.algorithm}, leaf_size={self.leaf_size}, metric={self.metric}, p={self.p}, metric_params={self.metric_params}, contamination={self.contamination}, novelty={self.novelty}, n_jobs={self.n_jobs})"
 
     def __eq__(self, other):
         return (
             type(self) == type(other) and
             self.get_params() == other.get_params()
+        )
+
+    def __sklearn_is_fitted__(self) -> bool:
+        """This method is called by `check_is_fitted(self)`
+        """
+        return (
+            getattr(self, "estimator_", None) is not None
         )
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None) -> Self:
@@ -406,11 +432,10 @@ class LOFAnomalyDetector(AnomalyDetector):
 
         X, y = super()._check_X_y(X, y)
 
-        lof = LocalOutlierFactor(n_neighbors=self.n_neighbors, algorithm=self.algorithm, leaf_size=self.leaf_size, metric=self.metric, p=self.p, metric_params=self.metric_params, contamination=self.contamination, novelty=self.novelty, n_jobs=self.n_jobs)
+        self._estimator = LocalOutlierFactor(n_neighbors=self.n_neighbors, algorithm=self.algorithm, leaf_size=self.leaf_size, metric=self.metric, p=self.p, metric_params=self.metric_params, contamination=self.contamination, novelty=self.novelty, n_jobs=self.n_jobs)
 
-        lof.fit(np.array(X))
+        self._estimator.fit(X)
 
-        self._lof = lof
         self.score_05_ = .5
 
         return self
@@ -424,7 +449,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: array with the score for each vector of data
         """
-        return self._lof.score_samples(X)
+        return self._estimator.score_samples(X)
 
     def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
         """
@@ -436,7 +461,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- of anomaly scores, between 0 and 1.
         """
-        anomaly_scores = -self._lof.score_samples(X)
+        anomaly_scores = -self._estimator.score_samples(X)
         min_score = np.min(anomaly_scores)
         max_score = np.max(anomaly_scores)
         distances = (anomaly_scores - min_score) / (max_score - min_score)
@@ -450,7 +475,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length
         :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
         """
-        return self._lof.decision_function(X)
+        return self._estimator.decision_function(X)
 
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:
         """
@@ -460,4 +485,4 @@ class LOFAnomalyDetector(AnomalyDetector):
         :type X: iterable of `float` vectors having the same length.
         :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
         """
-        return self._lof.predict(X)
+        return self._estimator.predict(X)
