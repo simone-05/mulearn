@@ -6,8 +6,7 @@ import math
 import numpy as np
 from functools import partial
 from sklearn.base import BaseEstimator
-from sklearn.utils.validation import check_X_y, check_array, check_is_fitted, check_random_state
-
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 
 DEFAULT_MAX_SAMPLES = 256           # default number of samples for each tree, taken from sklearn's IsolationForest max_samples
 DEFAULT_OFFSET = - 0.5              # used in decision_function, related to contamination value, used when contamination = auto
@@ -83,7 +82,7 @@ class IsolationTree:
         :rtype: int
         """
         if not hasattr(self, "og_features_indices_") or self.og_features_indices_ is None:
-            raise RuntimeError("Original feature index not yet set")
+            raise RuntimeError("Original feature index not set yet")
         return self.og_features_indices_[sampled_feature_index]
 
     def _build_splitting_function(self, X: NDArray, y: NDArray, verbose: int = 0) -> Callable[[NDArray[np.float64 | np.int_] | float | int], NDArray[np.float64]]:
@@ -93,12 +92,17 @@ class IsolationTree:
         :type X: NDArray
         :param y: The array of membership values, in interval [0,1]
         :type y: NDArray
-        :param verbose: To print more informations, either 0, 1 or 2, defaults to 0
+        :param verbose: To print more informations, either 0, 1 or 2, defaults         if verbose>=2:
+            print("normalized areas values:", normalized_areas)to 0
         :type verbose: int, optional
         :return: The inverse callable function, that accepts the y as paramter, and returns the corresponding feature value. And also a boolean, if True then the cumulative function is constant, and the inverse function will always return the maximum feature value.
         :rtype: tuple[Callable[[NDArray[np.float64 | np.int_] | float | int], NDArray[np.float64]], bool]
         """
-        # X, y = check_X_y(X.reshape(1,-1), y)
+        # Avoiding duplicates in couples (X,y):
+        zipped_X_y = list(zip(X, y))
+        zipped_X_y = np.unique(zipped_X_y, axis=0)
+        X = zipped_X_y[:,0]
+        y = zipped_X_y[:,1]
 
         # Calculating the intervals in feature space:
         midpoints = (X[:-1] + X[1:]) / 2
@@ -111,9 +115,9 @@ class IsolationTree:
         areas = bases * complemented_y       # base * height
 
         if areas.sum() == 0:
-            if verbose >= 2:
-                print("The cumulative function obtained is constant. Setting areas to all same value")
             areas = np.ones(len(areas))
+            if verbose >= 2:
+                print("The cumulative function obtained is constant. Setting all areas to same value")
 
         normalized_areas = areas / areas.sum()    # normalize areas
         # Building the cumulative:
@@ -179,7 +183,7 @@ class IsolationTree:
         ord_y = self._y[sorting_indices]
 
         if verbose == 2:
-            print("Split feature index:", split_feature_index)
+            print("Split feature index:", self._get_og_feature_index(split_feature_index))
 
         # Returning if max_depth reached or just one node left
         if depth >= self.max_depth or end - start <= 1:
@@ -213,8 +217,9 @@ class IsolationTree:
         # Recursion on children:
         if verbose == 2:
             print("continuing left" if split_index>start else "no nodes left to the left")
-            print("continuing right" if split_index<end else "no nodes left to the right")
         left_child = self._build_subTree(start, split_index, depth + 1, verbose=verbose) if split_index > start else None
+        if verbose == 2:
+            print("continuing right" if split_index<end else "no nodes left to the right")
         right_child = self._build_subTree(split_index, end, depth + 1, verbose=verbose) if split_index < end else None
 
         return TreeNode(feature_index=self._get_og_feature_index(split_feature_index), value=split_value, left=left_child, right=right_child, depth=depth)
@@ -457,9 +462,8 @@ class SupervisedIsolationForest(BaseEstimator):
         :return: The array of scores with values in interval [0,1]
         :rtype: NDArray[np.float64]
         """
-
-        X = check_array(X)
         check_is_fitted(self)
+        X = check_array(X)
 
         if verbose >= 1 :
             import time
@@ -485,9 +489,8 @@ class SupervisedIsolationForest(BaseEstimator):
         :return: The array of scores with values in interval [0,1]
         :rtype: NDArray[np.float64]
         """
-
-        X = check_array(X)
         check_is_fitted(self)
+        X = check_array(X)
         # As stated in sklearn 'score_samples is the opposite of the anomaly score':
         return -self.anomaly_score(X)
 
@@ -499,9 +502,8 @@ class SupervisedIsolationForest(BaseEstimator):
         :return: Array of floats, same length of X, in interval [-1,1]. Dimension 1
         :rtype: NDArray[np.float64]
         """
-
-        X = check_array(X)
         check_is_fitted(self)
+        X = check_array(X)
 
         if verbose >= 1:
             import time
@@ -522,9 +524,11 @@ class SupervisedIsolationForest(BaseEstimator):
         Instead of the normal sklearn behaviour of -1,+1.
         Since we are getting label values in fit [0,1]
         """
+        check_is_fitted(self)
         X = check_array(X)
         return np.where(self.decision_function(X) > 0, 1, 0)
 
     def score(self, X: ArrayLike, y: ArrayLike) -> float:
-        X,y = check_X_y(X, y)
+        check_is_fitted(self)
+        X, y = check_X_y(X, y)
         return 1.0 - np.mean((self.predict(X) - y) ** 2)

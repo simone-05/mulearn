@@ -5,13 +5,11 @@ import logging
 from typing import Callable, Literal, Self
 
 import numpy as np
-from numpy.random import RandomState
 from numpy.typing import NDArray, ArrayLike
 from sklearn.base import BaseEstimator
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
-from sklearn.dummy import check_random_state
-from sklearn.utils.validation import check_X_y, check_array
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 
 import mulearn.kernel as kernel
 from mulearn.optimization import Solver, GurobiSolver
@@ -42,48 +40,8 @@ class AnomalyDetector(BaseEstimator):
         raise NotImplementedError(
             "The base class does not implement the `fit` method")
 
-    def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Is the most direct score that an implementation can give.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: array with the score for each vector of data
-        """
-        raise NotImplementedError(
-            "The base class does not implement the `score_samples` method")
-
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Get the anomaly scores for each of the original points data.
-        Is used by the fuzzifier to compute the membership for each data point.
-        The bigger the more anomalous.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: np.array -- of anomaly scores, between 0 and 1.
-        """
-        raise NotImplementedError(
-            "The base class does not implement the `anomaly_score` method")
-
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Shifts the `score_samples` score to be able to then predict.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
-        """
-        raise NotImplementedError(
-            "The base class does not implement the `decision_function` method")
-
-    def predict(self, X: ArrayLike) -> NDArray[np.int_]:
-        """
-        Returns the array of predictions for each data point in X.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length.
-        :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
+    def predict(self, X: ArrayLike) -> NDArray[np.float64]:
+        """Returns the array of predictions for each data point in X.
         """
         raise NotImplementedError(
             "The base class does not implement the `predict` method")
@@ -150,7 +108,7 @@ class SVMAnomalyDetector(AnomalyDetector):
         """This method is called by `check_is_fitted(self)`
         """
         return (
-            getattr(self, "estimator_", None) is not None
+            getattr(self, "_estimator", None) is not None
         )
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False) -> Self:
@@ -178,48 +136,18 @@ class SVMAnomalyDetector(AnomalyDetector):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
+    def predict(self, X: ArrayLike) -> NDArray[np.float64]:
+        """Used by the fuzzifier to compute the membership for each data point
         """
-        The bigger the more anomalous.
+        X = check_array(X)
+        check_is_fitted(self)
 
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: array with the score for each vector of data
-        """
         return self._estimator.score_samples(X)
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Get the anomaly scores for each of the original points data
-        Is used by the fuzzifier to compute the membership for each data point.
-        The bigger the more anomalous.
-        For SVM is the same of score_samples.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: np.array -- of anomaly scores, between 0 and 1.
-        """
-        return self._estimator.anomaly_score(X)
-
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Shifts the `score_samples` score to be able to then predict.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
-        """
-        return self._estimator.decision_function(X)
-
-    def predict(self, X: ArrayLike) -> NDArray[np.int_]:
-        """
-        Returns the array of predictions for each data point in X.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length.
-        :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
-        """
-        return self._estimator.predict(X)
+    def score(self, X: ArrayLike, y: ArrayLike) -> float:
+        check_is_fitted(self)
+        X, y = check_X_y(X, y)
+        return 1.0 - np.mean((self.predict(X) - y) ** 2)
 
 
 class IFAnomalyDetector(AnomalyDetector):
@@ -277,7 +205,7 @@ class IFAnomalyDetector(AnomalyDetector):
         """This method is called by `check_is_fitted(self)`
         """
         return (
-            getattr(self, "estimator_", None) is not None
+            getattr(self, "_estimator", None) is not None
         )
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False, verbose: int = 0) -> Self:
@@ -313,51 +241,24 @@ class IFAnomalyDetector(AnomalyDetector):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
+    def predict(self, X: ArrayLike) -> NDArray[np.float64]:
+        """Used by the fuzzifier to compute the membership for each data point
         """
-        The lower the more anomalous.
+        X = check_array(X)
+        check_is_fitted(self)
 
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: array with the score for each vector of data
-        """
-        return self._estimator.score_samples(X)
+        membership_scores = self._estimator.score_samples(X)
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Get the anomaly scores for each of the original points data
-        Is used by the fuzzifier to compute the membership for each data point.
-        The bigger the more anomalous.
+        min_score = np.min(membership_scores)
+        max_score = np.max(membership_scores)
+        predictions = (membership_scores - min_score) / (max_score - min_score)
 
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: np.array -- of anomaly scores, between 0 and 1.
-        """
-        anomaly_scores = -self._estimator.score_samples(X)
-        min_score = np.min(anomaly_scores)
-        max_score = np.max(anomaly_scores)
-        distances = (anomaly_scores - min_score) / (max_score - min_score)
-        return distances
+        return predictions
 
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Shifts the `score_samples` score to be able to then predict.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
-        """
-        return self._estimator.decision_function(X)
-
-    def predict(self, X: ArrayLike) -> NDArray[np.int_]:
-        """
-        Returns the array of predictions for each data point in X.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length.
-        :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
-        """
-        return self._estimator.predict(X)
+    def score(self, X: ArrayLike, y: ArrayLike) -> float:
+        check_is_fitted(self)
+        X, y = check_X_y(X, y)
+        return 1.0 - np.mean((self.predict(X) - y) ** 2)
 
 
 class LOFAnomalyDetector(AnomalyDetector):
@@ -417,7 +318,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         """This method is called by `check_is_fitted(self)`
         """
         return (
-            getattr(self, "estimator_", None) is not None
+            getattr(self, "_estimator", None) is not None
         )
 
     def fit(self, X: ArrayLike, y: ArrayLike | None = None) -> Self:
@@ -440,49 +341,21 @@ class LOFAnomalyDetector(AnomalyDetector):
 
         return self
 
-    def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
+    def predict(self, X: ArrayLike) -> NDArray[np.float64]:
+        """Used by the fuzzifier to compute the membership for each data point
         """
-        Is the opposite of the Local Outlier Factor of X.
-        The lower the more anomalous.
+        X = check_array(X)
+        check_is_fitted(self)
 
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: array with the score for each vector of data
-        """
-        return self._estimator.score_samples(X)
+        membership_scores = self._estimator.score_samples(X)
 
-    def anomaly_score(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Get the anomaly scores for each of the original points data
-        Is used by the fuzzifier to compute the membership for each data point.
-        The bigger the more anomalous.
+        min_score = np.min(membership_scores)
+        max_score = np.max(membership_scores)
+        predictions = (membership_scores - min_score) / (max_score - min_score)
 
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: np.array -- of anomaly scores, between 0 and 1.
-        """
-        anomaly_scores = -self._estimator.score_samples(X)
-        min_score = np.min(anomaly_scores)
-        max_score = np.max(anomaly_scores)
-        distances = (anomaly_scores - min_score) / (max_score - min_score)
-        return distances
+        return predictions
 
-    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
-        """
-        Shifts the `score_samples` score to be able to then predict.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length
-        :returns: np.array -- for each value: less than zero is more anomalous, more than zero is more inlier.
-        """
-        return self._estimator.decision_function(X)
-
-    def predict(self, X: ArrayLike) -> NDArray[np.int_]:
-        """
-        Returns the array of predictions for each data point in X.
-
-        :param X: Vectors in data space.
-        :type X: iterable of `float` vectors having the same length.
-        :returns: np.array -- for each value: -1 means anomalous, +1 means normal.
-        """
-        return self._estimator.predict(X)
+    def score(self, X: ArrayLike, y: ArrayLike) -> float:
+        check_is_fitted(self)
+        X, y = check_X_y(X, y)
+        return 1.0 - np.mean((self.predict(X) - y) ** 2)

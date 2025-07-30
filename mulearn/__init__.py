@@ -89,7 +89,7 @@ class FuzzyInductor(RegressorMixin, BaseEstimator):
         :returns: array of float -- the predictions for each value in `X`.
         """
         X = check_array(X)
-        return self.fuzzifier.get_membership(self.anomaly_detector.anomaly_score(X))
+        return self.fuzzifier.get_membership(self.anomaly_detector.predict(X))
 
     def predict(self, X: ArrayLike, alpha: float | None = None) -> Iterable[int|float]:
         r"""Compute predictions for membership to the set.
@@ -132,9 +132,11 @@ class FuzzyInductor(RegressorMixin, BaseEstimator):
         """
         X, y = check_X_y(X, y)
 
-        return -np.mean((self.decision_function(X) - y) ** 2)
+        y_pred = self.decision_function(X)
+        # y_pred = self.predict(X)
+        return 1.0 - np.mean((y_pred - y) ** 2)
 
     def get_profile(self) -> list:
         if not self.keep_original_data:
             raise RuntimeError("Cannot execute the method `get_profile` without specifying `keep_original_data=True` in the constructor's parameters")
-        return self.fuzzifier.get_profile(self.anomaly_detector.anomaly_score(self.X_))
+        return self.fuzzifier.get_profile(self.anomaly_detector.predict(self.X_))

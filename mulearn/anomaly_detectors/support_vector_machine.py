@@ -40,6 +40,18 @@ class SupportVectorMachine(RegressorMixin, BaseEstimator):
             return False
         return equal
 
+    def __sklearn_is_fitted__(self) -> bool:
+        """Checks if this estimator has been fit
+
+        This method is called by `check_is_fitted(self)`
+
+        :return: If the `chis_` are set or not
+        :rtype: bool
+        """
+        return (
+            getattr(self, "chis_", None) is not None
+        )
+
     def fit(self, X: ArrayLike, y: ArrayLike | None = None, warm_start: bool = False) -> Self:
         """Induce the membership function starting from a labeled sample.
 
@@ -71,7 +83,7 @@ class SupportVectorMachine(RegressorMixin, BaseEstimator):
         X, y = check_X_y(X, y)
 
         if warm_start:
-            check_is_fitted(self, ["chis_"])
+            check_is_fitted(self)
             if self.chis_ is None:
                 raise NotFittedError("chis variable are set to None")
             self.solver.initial_values = self.chis_
@@ -107,7 +119,7 @@ class SupportVectorMachine(RegressorMixin, BaseEstimator):
         :return: array with the squared distances of the data points
         :rtype: NDArray[np.float64]
         """
-        check_is_fitted(self, ["chis_"])
+        check_is_fitted(self)
         X = check_array(X)
         t1 = self.k.compute(X, X)
         t2 = np.array([self.k.compute(x_i, X)
@@ -116,7 +128,7 @@ class SupportVectorMachine(RegressorMixin, BaseEstimator):
         return ret
 
     def score_samples(self, X: ArrayLike) -> NDArray[np.float64]:
-        check_is_fitted(self, ["chis_"])
+        check_is_fitted(self)
         X = check_array(X)
         return -self.anomaly_score(X)
 
@@ -128,7 +140,7 @@ class SupportVectorMachine(RegressorMixin, BaseEstimator):
         :return: array of values: more negative for more anomalous, more positive for more normal points
         :rtype: NDArray[np.float64]
         """
-        check_is_fitted(self, ["chis_"])
+        check_is_fitted(self)
         X = check_array(X)
         return self.squared_radius_ - self.anomaly_score(X)
 
@@ -140,7 +152,7 @@ class SupportVectorMachine(RegressorMixin, BaseEstimator):
         :return: array of predictions
         :rtype: NDArray[np.int_]
         """
-        check_is_fitted(self, ["chis_"])
+        check_is_fitted(self)
         X = check_array(X)
 
         predictions = [1 if value>=0 else 0 for value in self.decision_function(X)]
@@ -160,5 +172,6 @@ class SupportVectorMachine(RegressorMixin, BaseEstimator):
         :returns: `float` -- inverted MSE between the predictions for the
           elements in `X` w.r.t. the labels in `y`.
         """
+        check_is_fitted(self)
         X, y = check_X_y(X, y)
         return 1.0 - np.mean((self.predict(X) - y) ** 2)
