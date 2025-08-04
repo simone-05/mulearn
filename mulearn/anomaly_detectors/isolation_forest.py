@@ -355,7 +355,7 @@ class SupervisedIsolationForest(BaseEstimator):
         self._X, self._y = X.copy(), y.copy()
 
         dataset_size = len(self._X)
-        dataset_features_number = self._X.shape[1]
+        self.n_features_in_ = self._X.shape[1]
 
         # 'max_samples' parameter check and setting:
         if self.max_samples == "auto":
@@ -374,10 +374,7 @@ class SupervisedIsolationForest(BaseEstimator):
         max_samples = min(max_samples, dataset_size)
 
         # 'contamination' parameter check:
-        # The parameter 'contamination' will be used in 'decision_function' function
         if isinstance(self.contamination, (float, np.floating)):
-            # if self.contamination_ > .5 or self.contamination_ <= .0:
-            #     raise ValueError(f"if contamination is a float, it should be between 0.0 excluded and 0.5. Given value: {self.contamination_}")
             if self.contamination >= 1. or self.contamination < .0:
                 raise ValueError(f"if contamination is a float, it should be between 0.0 and 1.0 excluded. Given value: {self.contamination}")
             self.anomalies_number_ = int(len(self._X) * self.contamination)
@@ -398,10 +395,10 @@ class SupervisedIsolationForest(BaseEstimator):
             maxf = self.max_features
             if maxf > 1. or maxf < .0:
                 raise ValueError(f"if max_features is a float, it should be between 0.0 and 1.0. Given value: {maxf}")
-            max_features = int(dataset_features_number * maxf) or 1
+            max_features = int(self.n_features_in_ * maxf) or 1
         else:
             raise TypeError(f"max_features parameter should be either a 'int' or 'float', given: {type(self.max_features)}")
-        max_features = min(max_features, dataset_features_number)
+        max_features = min(max_features, self.n_features_in_)
 
         # 'max_depth' parameter check and setting:
         if self.max_depth is None:
@@ -437,7 +434,7 @@ class SupervisedIsolationForest(BaseEstimator):
             sampled_y = y[samples_indeces]
 
             # Feature setting for the samples:
-            sampled_features = np.sort(self.random_number_generator_.choice(dataset_features_number, size=max_features, replace=False))
+            sampled_features = np.sort(self.random_number_generator_.choice(self.n_features_in_, size=max_features, replace=False))
             sampled_X = sampled_X[:,sampled_features]
 
             # Training a tree:
@@ -447,7 +444,15 @@ class SupervisedIsolationForest(BaseEstimator):
 
         # Saving 'c(n)' term to later calculate the score for any data point:
         # 'dataset_size' is 'n'
-        self.c_of_n_ = 2 * (math.log(dataset_size-1) + np.euler_gamma) - (2*(dataset_size-1)/dataset_size)
+        if dataset_size == 1:
+            self.c_of_n_ = 1
+        else:
+            self.c_of_n_ = 2 * (math.log(dataset_size-1) + np.euler_gamma) - (2*(dataset_size-1)/dataset_size)
+
+        # Calculating the offset value that gives us the decided percentage of anomalies among the scores:
+        sorted_scores = np.sort(self.score_samples(self._X))
+        self.offset_ = (sorted_scores[self.anomalies_number_] - sorted_scores[self.anomalies_number_-1]) / 2
+        self.offset_ = sorted_scores[self.anomalies_number_] - self.offset_
 
         if verbose == 2:
             print(time.time()-start,"seconds")
@@ -494,7 +499,7 @@ class SupervisedIsolationForest(BaseEstimator):
         # As stated in sklearn 'score_samples is the opposite of the anomaly score':
         return -self.anomaly_score(X)
 
-    def decision_function(self, X: ArrayLike, verbose: int = 0) -> NDArray[np.float64]:
+    def decision_function(self, X: ArrayLike) -> NDArray[np.float64]:
         """Shifts the score_samples to be between -1 and 1. The lower the more abnormal
 
         :param X: The samples to calculate the values for
@@ -504,18 +509,6 @@ class SupervisedIsolationForest(BaseEstimator):
         """
         check_is_fitted(self)
         X = check_array(X)
-
-        if verbose >= 1:
-            import time
-            start = time.time()
-        # Type and value checks on contamination parameter and setting of anomalies_number_, already done during fit()
-        if not hasattr(self, "offset_"):    # we avoid calculating it if we did already. It saves a lot of time
-            # Subtracting from the scores a value so that we have the decided percentage of anomalies
-            sorted_scores = np.sort(self.score_samples(self._X))    # computationally expensive
-            self.offset_ = (sorted_scores[self.anomalies_number_] - sorted_scores[self.anomalies_number_-1]) / 2
-            self.offset_ = sorted_scores[self.anomalies_number_] - self.offset_
-        if verbose >= 1:
-            print(time.time()-start,"seconds")
         return self.score_samples(X) - self.offset_
 
     def predict(self, X: ArrayLike) -> NDArray[np.int_]:

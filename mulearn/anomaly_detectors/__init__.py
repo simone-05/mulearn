@@ -2,7 +2,7 @@
 """
 
 import logging
-from typing import Callable, Literal, Self
+from typing import Any, Callable, Literal, Self
 
 import numpy as np
 from numpy.typing import NDArray, ArrayLike
@@ -11,8 +11,6 @@ from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 
-import mulearn.kernel as kernel
-from mulearn.optimization import Solver, GurobiSolver
 from mulearn.anomaly_detectors.isolation_forest import SupervisedIsolationForest
 from mulearn.anomaly_detectors.support_vector_machine import SupportVectorMachine
 
@@ -75,8 +73,10 @@ class SVMAnomalyDetector(AnomalyDetector):
 
     def __init__(self,
                  c: float = 1,
-                 k: kernel.Kernel = kernel.GaussianKernel(),
-                 solver: Solver = GurobiSolver()
+                 k: Literal["linear", "polynomial", "homogeneous", "gaussian", "hyperbolic", "precomputed"] = "gaussian",
+                 k_params: dict[str, Any] | None = None,
+                 solver: Literal["gurobi", "tensorflow"] = "gurobi",
+                 solver_params: dict[str, Any] | None = None
                  ) -> None:
         """Create an instance of :class:`SVMAnomalyDetector`.
 
@@ -91,7 +91,9 @@ class SVMAnomalyDetector(AnomalyDetector):
 
         self.c = c
         self.k = k
+        self.k_params = k_params
         self.solver = solver
+        self.solver_params = solver_params
 
     def __repr__(self, **kwargs):
         return f"SVMAnomalyDetector(c={self.c}, k={self.k}, " \
@@ -129,8 +131,9 @@ class SVMAnomalyDetector(AnomalyDetector):
         """
 
         X, y = super()._check_X_y(X, y)
+        self.n_features_in_ = X.shape[1]
 
-        self._estimator = SupportVectorMachine(c=self.c, k=self.k, solver=self.solver)
+        self._estimator = SupportVectorMachine(c=self.c, k=self.k, k_params=self.k_params, solver=self.solver, solver_params=self.solver_params)
         self._estimator = self._estimator.fit(X, y, warm_start=warm_start)
         self.score_05_ = self._estimator.squared_radius_
 
@@ -226,6 +229,7 @@ class IFAnomalyDetector(AnomalyDetector):
         """
 
         X, y = super()._check_X_y(X, y)
+        self.n_features_in_ = X.shape[1]
 
         if y is None:
             trees = self.n_trees or 100
@@ -236,8 +240,11 @@ class IFAnomalyDetector(AnomalyDetector):
             trees = self.n_trees or 20
             self._estimator = SupervisedIsolationForest(n_estimators=trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, max_depth=self.max_depth, random_state=self.random_state)
             self._estimator.fit(X, y, verbose=verbose)
-            self._estimator.decision_function(X)    # estimator.offset is set when this function is called
             self.score_05_ = -self._estimator.offset_
+
+        train_scores = self._estimator.score_samples(X)
+        self._min_score = np.min(train_scores)
+        self._max_score = np.max(train_scores)
 
         return self
 
@@ -249,9 +256,10 @@ class IFAnomalyDetector(AnomalyDetector):
 
         membership_scores = self._estimator.score_samples(X)
 
-        min_score = np.min(membership_scores)
-        max_score = np.max(membership_scores)
-        predictions = (membership_scores - min_score) / (max_score - min_score)
+        if self._min_score == self._max_score:
+            predictions = np.full_like(membership_scores, self._min_score)
+        else:
+            predictions = (membership_scores - self._min_score) / (self._max_score - self._min_score)
 
         return predictions
 
@@ -264,7 +272,7 @@ class IFAnomalyDetector(AnomalyDetector):
 class LOFAnomalyDetector(AnomalyDetector):
     def __init__(self,
                  n_neighbors: int = 20,
-                 algorithm: Literal["auto", "ball_tree", "kd_tree", "brute"]="auto",
+                 algorithm: Literal["auto", "ball_tree", "kd_tree", "brute"] = "auto",
                  leaf_size: int = 30,
                  metric: str | Callable = "minkowski",
                  p: int = 2,
@@ -296,7 +304,7 @@ class LOFAnomalyDetector(AnomalyDetector):
         """
 
         self.n_neighbors = n_neighbors
-        self.algorithm: Literal["auto", "ball_tree", "kd_tree", "brute"] = algorithm
+        self.algorithm = algorithm
         self.leaf_size = leaf_size
         self.metric = metric
         self.p = p
@@ -332,12 +340,19 @@ class LOFAnomalyDetector(AnomalyDetector):
         """
 
         X, y = super()._check_X_y(X, y)
+        self.n_features_in_ = X.shape[1]
 
-        self._estimator = LocalOutlierFactor(n_neighbors=self.n_neighbors, algorithm=self.algorithm, leaf_size=self.leaf_size, metric=self.metric, p=self.p, metric_params=self.metric_params, contamination=self.contamination, novelty=self.novelty, n_jobs=self.n_jobs)
+        if y is None:
+            self._estimator = LocalOutlierFactor(n_neighbors=self.n_neighbors, algorithm=self.algorithm, leaf_size=self.leaf_size, metric=self.metric, p=self.p, metric_params=self.metric_params, contamination=self.contamination, novelty=self.novelty, n_jobs=self.n_jobs)
+            self._estimator.fit(X)
+            self.score_05_ = .5
+        else:
+            raise NotImplementedError(
+                "Supervised Local Outlier Factor not yet implemented")
 
-        self._estimator.fit(X)
-
-        self.score_05_ = .5
+        train_scores = self._estimator.score_samples(X)
+        self._min_score = np.min(train_scores)
+        self._max_score = np.max(train_scores)
 
         return self
 
@@ -349,9 +364,10 @@ class LOFAnomalyDetector(AnomalyDetector):
 
         membership_scores = self._estimator.score_samples(X)
 
-        min_score = np.min(membership_scores)
-        max_score = np.max(membership_scores)
-        predictions = (membership_scores - min_score) / (max_score - min_score)
+        if self._min_score == self._max_score:
+            predictions = np.full_like(membership_scores, self._min_score)
+        else:
+            predictions = (membership_scores - self._min_score) / (self._max_score - self._min_score)
 
         return predictions
 
