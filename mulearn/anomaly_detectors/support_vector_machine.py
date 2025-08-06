@@ -127,6 +127,7 @@ class SupportVectorMachine(BaseEstimator):
                         if -self.c * (1 - mu) < chi < self.c * mu]
 
         if len(chi_SV_index) == 0:
+            logger.warning("No support vectors found")
             if len(X) == 1:
                 self.squared_radius_ = 1e-6
             else:

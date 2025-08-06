@@ -133,9 +133,19 @@ class SVMAnomalyDetector(AnomalyDetector):
         X, y = super()._check_X_y(X, y)
         self.n_features_in_ = X.shape[1]
 
-        self._estimator = SupportVectorMachine(c=self.c, k=self.k, k_params=self.k_params, solver=self.solver, solver_params=self.solver_params)
+        self._estimator = SupportVectorMachine(
+            c=self.c,
+            k=self.k,
+            k_params=self.k_params,
+            solver=self.solver,
+            solver_params=self.solver_params
+        )
         self._estimator = self._estimator.fit(X, y, warm_start=warm_start)
         self.score_05_ = self._estimator.squared_radius_
+
+        train_scores = self._estimator.score_samples(X)
+        self._min_score = np.min(train_scores)
+        self._max_score = np.max(train_scores)
 
         return self
 
@@ -145,7 +155,14 @@ class SVMAnomalyDetector(AnomalyDetector):
         X = check_array(X)
         check_is_fitted(self)
 
-        return self._estimator.score_samples(X)
+        membership_scores = self._estimator.score_samples(X)
+
+        if self._min_score == self._max_score:
+            predictions = np.full_like(membership_scores, self._min_score)
+        else:
+            predictions = (membership_scores - self._min_score) / (self._max_score - self._min_score)
+
+        return predictions
 
     def score(self, X: ArrayLike, y: ArrayLike) -> float:
         check_is_fitted(self)
@@ -233,12 +250,28 @@ class IFAnomalyDetector(AnomalyDetector):
 
         if y is None:
             trees = self.n_trees or 100
-            self._estimator = IsolationForest(n_estimators=trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, bootstrap=self.bootstrap, n_jobs=self.n_jobs, random_state=self.random_state, warm_start=warm_start)
+            self._estimator = IsolationForest(
+                n_estimators=trees,
+                max_samples=self.max_samples,
+                contamination=self.contamination,
+                max_features=self.max_features,
+                bootstrap=self.bootstrap,
+                n_jobs=self.n_jobs,
+                random_state=self.random_state,
+                warm_start=warm_start
+            )
             self._estimator.fit(X)
             self.score_05_ = .5
         else:
             trees = self.n_trees or 20
-            self._estimator = SupervisedIsolationForest(n_estimators=trees, max_samples=self.max_samples, contamination=self.contamination, max_features=self.max_features, max_depth=self.max_depth, random_state=self.random_state)
+            self._estimator = SupervisedIsolationForest(
+                n_estimators=trees,
+                max_samples=self.max_samples,
+                contamination=self.contamination,
+                max_features=self.max_features,
+                max_depth=self.max_depth,
+                random_state=self.random_state
+            )
             self._estimator.fit(X, y, verbose=verbose)
             self.score_05_ = -self._estimator.offset_
 
@@ -343,7 +376,16 @@ class LOFAnomalyDetector(AnomalyDetector):
         self.n_features_in_ = X.shape[1]
 
         if y is None:
-            self._estimator = LocalOutlierFactor(n_neighbors=self.n_neighbors, algorithm=self.algorithm, leaf_size=self.leaf_size, metric=self.metric, p=self.p, metric_params=self.metric_params, contamination=self.contamination, novelty=self.novelty, n_jobs=self.n_jobs)
+            self._estimator = LocalOutlierFactor(
+                n_neighbors=self.n_neighbors,
+                algorithm=self.algorithm,
+                leaf_size=self.leaf_size,
+                metric=self.metric,
+                p=self.p,
+                metric_params=self.metric_params,
+                contamination=self.contamination,
+                novelty=self.novelty, n_jobs=self.n_jobs
+            )
             self._estimator.fit(X)
             self.score_05_ = .5
         else:
