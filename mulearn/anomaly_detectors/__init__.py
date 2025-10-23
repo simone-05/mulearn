@@ -261,7 +261,7 @@ class IFAnomalyDetector(AnomalyDetector):
                 warm_start=warm_start
             )
             self._estimator.fit(X)
-            self.score_05_ = .5
+            self.score_05_ = self._estimator.offset_
         else:
             trees = self.n_trees or 20
             self._estimator = SupervisedIsolationForest(
@@ -387,7 +387,7 @@ class LOFAnomalyDetector(AnomalyDetector):
                 novelty=self.novelty, n_jobs=self.n_jobs
             )
             self._estimator.fit(X)
-            self.score_05_ = .5
+            self.score_05_ = self._estimator.offset_
         else:
             raise NotImplementedError(
                 "Supervised Local Outlier Factor not yet implemented")

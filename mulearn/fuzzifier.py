@@ -118,7 +118,7 @@ class Fuzzifier:
     def __nonzero__():
         """Check if a fuzzifier is non-null."""
         return True
-    
+
     def __getstate__(self):
         return self.__dict__
 
@@ -127,7 +127,7 @@ class Fuzzifier:
 
     def __json__(self):
         return {'class': self.__class__.__name__, 'profile': self.profile}
-    
+
     def __repr__(self):
         """Return the python representation of the fuzzifier."""
         arg = self.profile if self.profile != None else ''
@@ -150,7 +150,7 @@ class CrispFuzzifier(Fuzzifier):
         :type profile: str
         """
         super().__init__(profile)
-    
+
     def fit(self, anomaly_score, mu, score_05):
         r"""Fit the fuzzifier on training data.
 
@@ -185,7 +185,7 @@ class CrispFuzzifier(Fuzzifier):
 
         assert len(anomaly_score) == len(mu)
 
-            
+
         if self.profile == "fixed":
             self.threshold_ = score_05
 
@@ -197,10 +197,10 @@ class CrispFuzzifier(Fuzzifier):
                 return result
 
             try:
-                [t_opt], _ = curve_fit(r2_to_mu, anomaly_score, mu, 
+                [t_opt], _ = curve_fit(r2_to_mu, anomaly_score, mu,
                                     bounds=((0,), (np.inf,)))
                 self.threshold_ = t_opt
-                
+
                 if self.threshold_ < 0:
                     logger.warning("Profile fit returned a negative parameter "
                                    f"({self.threshold_})")
@@ -208,11 +208,11 @@ class CrispFuzzifier(Fuzzifier):
                 # interpolation could not take place, fall back to fixed profile
                 self.profile = 'fixed'
                 self.fit(anomaly_score, mu, score_05)
-            
+
         else:
             raise ValueError("'profile' parameter should either be equal to "
                              f"'fixed' or 'infer' (provided: {self.profile})")
-    
+
     def get_membership(self, R_2):
         check_is_fitted(self, 'threshold_')
         return np.array([1 if r_2 < self.threshold_ else 0 for r_2 in R_2])
@@ -267,22 +267,22 @@ class LinearFuzzifier(Fuzzifier):
 
         self.name = 'Linear'
         self.latex_name = '$\\hat\\mu_{\\text{lin}}$'
-        
+
         assert len(anomaly_score) == len(mu)
-        
+
         r_2_1_guess = np.median([r2 for r2, m in zip (anomaly_score, mu)
                                               if m >= max(mu)*0.99])
         r_2_0_guess = np.median([r2 for r2, m in zip (anomaly_score, mu)
                                               if m <= min(mu)*1.01])
         r_2_05_guess = (r_2_1_guess + r_2_0_guess) / 2
 
-                                      
+
         if self.profile == 'fixed':
             def r2_to_mu(R_2, r_2_1):
 
                 result = [np.clip(1 - 0.5 * (r_2-r_2_1)/(score_05-r_2_1),
                                   0, 1) for r_2 in R_2]
-                
+
                 return result
 
             [r_2_1_opt], _ = curve_fit(r2_to_mu, anomaly_score, mu,
@@ -290,8 +290,8 @@ class LinearFuzzifier(Fuzzifier):
                                        bounds=((0,), (np.inf,)))
             self.slope_ = -1 / (2 * (score_05 - r_2_1_opt))
             self.intercept_ = 1 + r_2_1_opt / (2 * (score_05 - r_2_1_opt))
-        
-            
+
+
         elif self.profile == 'triangular':
             def r2_to_mu(R_2, r_2_05):
                 # TODO: check
@@ -321,7 +321,7 @@ class LinearFuzzifier(Fuzzifier):
 
             try:
                 p_opt, _ = curve_fit(r2_to_mu, anomaly_score, mu,
-                                    p0=(r_2_1_guess, r_2_0_guess), 
+                                    p0=(r_2_1_guess, r_2_0_guess),
                                     bounds=((-np.inf, -np.inf),
                                             (np.inf, np.inf,)))
                 r_2_1_opt, r_2_0_opt = p_opt
@@ -341,7 +341,7 @@ class LinearFuzzifier(Fuzzifier):
         if self.intercept_ < 0:
             logger.warning('Profile fitting returned a negative intercept '
                             f'({self.intercept_})')
-        
+
         return self
 
     def get_membership(self, R_2):
@@ -379,7 +379,7 @@ class ExponentialFuzzifier(Fuzzifier):
         :type mu: vector of floats having the same length of `anomaly_score`
         :param score_05: radius of the fuzzy set in feature space.
         :type score_05: float
-        
+
         :raises: ValueError if self.profile is not set either to `'fixed'`,
           `'infer'` or to a numeric value in $[0, 1]$.
 
@@ -474,21 +474,21 @@ class ExponentialFuzzifier(Fuzzifier):
                 # interpolation could not take place, fall back to fixed profile
                 self.profile = 'fixed'
                 self.fit(anomaly_score, mu, score_05)
-            
+
         else:
             raise ValueError("'self.profile' attribute should be equal to "
                              "'infer', 'fixed' or 'alpha' "
                              f"(provided value: {self.profile})")
-        
+
         if self.slope_ > 0:
             logger.warning('Profile fitting returned a positive slope '
                             f'({self.slope_})')
         if self.intercept_ < 0:
             logger.warning('Profile fitting returned a negative intercept '
                             f'({self.intercept_})')
-        
+
         return self
-    
+
     def get_membership(self, R_2):
         check_is_fitted(self, ['slope_', 'intercept_'])
         return exp_clip(self.slope_ * R_2 + self.intercept_)
@@ -503,7 +503,7 @@ class QuantileConstantPiecewiseFuzzifier(Fuzzifier):
 
     def __init__(self, profile='infer'):
         r"""Create an instance of :class:`QuantileConstantPiecewiseFuzzifier`.
-        
+
         :param profile: method to be used in order to build the fuzzifier
           profile: `'fixed'` relies on the radius of the sphere defining
           the fuzzy set core and `'infer'` fits the profile function on the
@@ -523,7 +523,7 @@ class QuantileConstantPiecewiseFuzzifier(Fuzzifier):
         :type mu: vector of floats having the same length of `anomaly_score`
         :param score_05: radius of the fuzzy set in feature space.
         :type score_05: float
-        
+
         :raises: ValueError if self.profile is not set either to `'fixed'`,
           `'infer'` or to a numeric value in $[0, 1]$.
 
@@ -542,19 +542,19 @@ class QuantileConstantPiecewiseFuzzifier(Fuzzifier):
 
         self.r_2_1_ = np.median([r_2 for r_2, m in zip(anomaly_score, mu)
                                if m >= max(mu)*0.99])
-        
+
         external_dist = [r_2 - self.r_2_1_ for r_2 in anomaly_score
                                            if r_2 > self.r_2_1_]
-              
+
         if external_dist:
             self.m_ = np.median(external_dist)
             self.q1_ = np.percentile(external_dist, 25)
             self.q3_ = np.percentile(external_dist, 75)
         else:
             self.m_ = self.q1_ = self.q3_ = 0
-        
+
         return self
-    
+
     def get_membership(self, R_2):
         check_is_fitted(self, ['r_2_1_', 'm_', 'q1_', 'q3_'])
         return np.array([1 if r_2 <= self.r_2_1_ \
@@ -573,7 +573,7 @@ class QuantileLinearPiecewiseFuzzifier(Fuzzifier):
 
     def __init__(self, profile='infer'):
         r"""Create an instance of :class:`QuantileLinearPiecewiseFuzzifier`.
-        
+
         :param profile: method to be used in order to build the fuzzifier
           profile: `'fixed'` relies on the radius of the sphere defining
           the fuzzy set core and `'infer'` fits the profile function on the
@@ -606,11 +606,11 @@ class QuantileLinearPiecewiseFuzzifier(Fuzzifier):
 
         self.r_2_1_ = np.median([r_2 for r_2, m in zip(anomaly_score, mu)
                                if m >= max(mu)*0.99])
-        
-        
+
+
         external_dist = [r_2 - self.r_2_1_ for r_2 in anomaly_score
                                            if r_2 > self.r_2_1_]
-              
+
         if external_dist:
             self.m_ = np.median(external_dist)
             self.q1_ = np.percentile(external_dist, 25)
@@ -620,7 +620,7 @@ class QuantileLinearPiecewiseFuzzifier(Fuzzifier):
             self.m_ = self.q1_ = self.q3_ = self.max_ = 0
 
         return self
-        
+
     def get_membership(self, R_2):
         check_is_fitted(self, ['r_2_1_', 'm_', 'q1_', 'q3_'])
         return np.array([1 if r_2 <= self.r_2_1_ \
@@ -634,4 +634,4 @@ class QuantileLinearPiecewiseFuzzifier(Fuzzifier):
                             if r_2 <= self.r_2_1_+self.max_\
                 else 0 for r_2 in R_2])
 
-    
+

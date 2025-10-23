@@ -451,8 +451,10 @@ class SupervisedIsolationForest(BaseEstimator):
 
         # Calculating the offset value that gives us the decided percentage of anomalies among the scores:
         sorted_scores = np.sort(self.score_samples(self._X))
-        self.offset_ = (sorted_scores[self.anomalies_number_] - sorted_scores[self.anomalies_number_-1]) / 2
-        self.offset_ = sorted_scores[self.anomalies_number_] - self.offset_
+        if self.anomalies_number_ == dataset_size:  # if all anomalies
+            self.offset_ = sorted_scores[dataset_size-1]
+        else:
+            self.offset_ = (sorted_scores[self.anomalies_number_] + sorted_scores[self.anomalies_number_ - 1]) / 2
 
         if verbose == 2:
             print(time.time()-start,"seconds")
